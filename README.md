@@ -1,0 +1,2 @@
+# quant-trading-platform
+2025seu_summer基于Python和Docker的量化交易平台
