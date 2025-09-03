@@ -131,6 +131,9 @@ router.beforeEach((to, from, next) => {
   // 设置页面标题
   document.title = to.meta.title || '量化交易选股系统'
   
+  // 为了方便预览，临时禁用登录权限验证
+  // 实际使用时请取消注释下面的代码
+  /*
   // 判断该路由是否需要登录权限
   if (to.meta.requiresAuth) {
     const token = localStorage.getItem('token')
@@ -156,6 +159,10 @@ router.beforeEach((to, from, next) => {
   } else {
     next()
   }
+  */
+  
+  // 直接通过所有路由，方便预览
+  next()
 })
 
 export default router

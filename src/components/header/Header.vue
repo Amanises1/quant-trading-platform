@@ -1,7 +1,6 @@
 <template>
   <div class="header">
     <div class="logo-container">
-      <img src="../../assets/logo.png" alt="Logo" class="logo" v-if="logo">
       <h1 class="title">量化交易选股系统</h1>
     </div>
     <div class="header-right">
