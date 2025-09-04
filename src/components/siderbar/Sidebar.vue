@@ -117,7 +117,7 @@ export default {
   data() {
     return {
       isCollapse: false,
-      userRole: 'admin' // 默认为管理员角色，实际应从登录信息中获取
+      userRole: 'trader' // 默认为交易员角色，实际应从登录信息中获取
     }
   },
   computed: {
