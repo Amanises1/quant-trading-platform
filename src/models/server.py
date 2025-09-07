@@ -25,15 +25,27 @@ import mplfinance as mpf
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-# 导入ChartGenerator类
+# 导入监控模块
 try:
-    from src.models.visualization.chart_generator import ChartGenerator
+    from models.monitor import (
+        position_manager,
+        execution_engine,
+        trade_history_manager,
+        risk_manager,
+        notification_manager
+    )
 except ImportError:
     # 如果导入失败，尝试使用相对导入
     import sys
     import os
     # 确保当前目录在Python路径中
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# 导入ChartGenerator类
+try:
+    from src.models.visualization.chart_generator import ChartGenerator
+except ImportError:
+    # 如果导入失败，尝试使用相对导入
     # 动态加载ChartGenerator类
     chart_generator_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'visualization', 'chart_generator.py')
     import importlib.util
@@ -1229,6 +1241,271 @@ def delete_notification(notification_id):
         }), 404
     except Exception as e:
         logger.error(f'Error deleting notification: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 持仓管理API
+@app.route('/api/positions', methods=['GET'])
+def get_positions():
+    try:
+        account_id = request.args.get('account_id', 'default')
+        positions = position_manager.get_positions(account_id)
+        return jsonify({'positions': positions})
+    except Exception as e:
+        logger.error(f'Error getting positions: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/positions/update', methods=['POST'])
+def update_position():
+    try:
+        data = request.json
+        result = position_manager.update_position(
+            account_id=data.get('account_id', 'default'),
+            symbol=data.get('symbol'),
+            quantity=data.get('quantity'),
+            price=data.get('price')
+        )
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f'Error updating position: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/positions/risk', methods=['GET'])
+def get_position_risk():
+    try:
+        account_id = request.args.get('account_id', 'default')
+        risk_report = position_manager.evaluate_position_risks(account_id)
+        return jsonify(risk_report)
+    except Exception as e:
+        logger.error(f'Error getting position risk: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 交易执行API
+@app.route('/api/trade/exec', methods=['POST'])
+def execute_trade():
+    try:
+        data = request.json
+        order = execution_engine.submit_order(
+            account_id=data.get('account_id', 'default'),
+            symbol=data.get('symbol'),
+            side=data.get('side'),  # 'buy' or 'sell'
+            quantity=data.get('quantity'),
+            price=data.get('price'),
+            order_type=data.get('order_type', 'market')
+        )
+        return jsonify(order)
+    except Exception as e:
+        logger.error(f'Error executing trade: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/orders/<string:order_id>', methods=['GET'])
+def get_order_status(order_id):
+    try:
+        order = execution_engine.get_order_status(order_id)
+        if order:
+            return jsonify(order)
+        return jsonify({'error': '订单不存在'}), 404
+    except Exception as e:
+        logger.error(f'Error getting order status: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/orders/<string:order_id>/cancel', methods=['POST'])
+def cancel_order(order_id):
+    try:
+        result = execution_engine.cancel_order(order_id)
+        if result['success']:
+            return jsonify(result)
+        return jsonify(result), 400
+    except Exception as e:
+        logger.error(f'Error canceling order: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 历史交易记录API
+@app.route('/api/trade/history', methods=['GET'])
+def get_trade_history():
+    try:
+        account_id = request.args.get('account_id', 'default')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        symbol = request.args.get('symbol')
+        
+        history = trade_history_manager.get_trade_history(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            symbol=symbol
+        )
+        return jsonify({'trades': history})
+    except Exception as e:
+        logger.error(f'Error getting trade history: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/trade/export', methods=['GET'])
+def export_trade_history():
+    try:
+        account_id = request.args.get('account_id', 'default')
+        export_format = request.args.get('format', 'csv')
+        
+        file_data, filename = trade_history_manager.export_trades(
+            account_id=account_id,
+            export_format=export_format
+        )
+        
+        return send_file(
+            io.BytesIO(file_data),
+            mimetype='text/csv' if export_format == 'csv' else 'application/vnd.ms-excel',
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        logger.error(f'Error exporting trade history: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 账户信息API
+@app.route('/api/account', methods=['GET'])
+def get_account_info():
+    try:
+        account_id = request.args.get('account_id', 'A001')
+        account = risk_manager.get_account_by_id(account_id)
+        if account:
+            return jsonify({
+                'balance': account['balance'],
+                'available_funds': account['balance'] - account['margin'],
+                'equity': account['equity'],
+                'margin': account['margin'],
+                'marginRatio': account['marginRatio'],
+                'maxDrawdown': account['maxDrawdown'],
+                'dailyProfit': account['dailyProfit']
+            })
+        # 如果找不到账户，返回默认模拟数据
+        return jsonify({
+            'balance': 500000.00,
+            'available_funds': 300000.00,
+            'equity': 700000.00,
+            'margin': 100000.00,
+            'marginRatio': 170.00,
+            'maxDrawdown': -8.50,
+            'dailyProfit': 2500.00
+        })
+    except Exception as e:
+        logger.error(f'Error getting account info: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 活跃订单API
+@app.route('/api/orders/active', methods=['GET'])
+def get_active_orders():
+    try:
+        account_id = request.args.get('account_id', 'default')
+        # 从execution_engine获取所有未完成的订单
+        active_orders = [order for order in execution_engine.orders if order['status'] == 'pending']
+        # 按账户ID过滤
+        if account_id != 'default':
+            active_orders = [order for order in active_orders if order['accountId'] == account_id]
+        return jsonify({'orders': active_orders})
+    except Exception as e:
+        logger.error(f'Error getting active orders: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 风控管理API
+@app.route('/api/risk/metrics', methods=['GET'])
+def get_risk_metrics():
+    try:
+        account_id = request.args.get('account_id', 'default')
+        metrics = risk_manager.calculate_risk_metrics(account_id)
+        return jsonify(metrics)
+    except Exception as e:
+        logger.error(f'Error getting risk metrics: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/risk/monitor', methods=['GET'])
+def monitor_risk():
+    try:
+        account_id = request.args.get('account_id', 'default')
+        risk_alerts = risk_manager.monitor_account_risk(account_id)
+        return jsonify({'alerts': risk_alerts})
+    except Exception as e:
+        logger.error(f'Error monitoring risk: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/risk/thresholds', methods=['POST'])
+def set_risk_thresholds():
+    try:
+        data = request.json
+        result = risk_manager.set_risk_thresholds(
+            account_id=data.get('account_id', 'default'),
+            thresholds=data.get('thresholds')
+        )
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f'Error setting risk thresholds: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 通知管理API
+@app.route('/api/notification/config', methods=['GET'])
+def get_notification_config():
+    try:
+        account_id = request.args.get('account_id', 'default')
+        config = notification_manager.get_notification_config(account_id)
+        return jsonify(config)
+    except Exception as e:
+        logger.error(f'Error getting notification config: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/notification/config', methods=['POST'])
+def update_notification_config():
+    try:
+        data = request.json
+        result = notification_manager.save_notification_config(
+            account_id=data.get('account_id', 'default'),
+            config=data.get('config')
+        )
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f'Error updating notification config: {str(e)}')
         return jsonify({
             'success': False,
             'message': str(e)
