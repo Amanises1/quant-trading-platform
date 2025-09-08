@@ -32,7 +32,8 @@ try:
         execution_engine,
         trade_history_manager,
         risk_manager,
-        notification_manager
+        notification_manager,
+        notification_service
     )
 except ImportError:
     # 如果导入失败，尝试使用相对导入
@@ -40,6 +41,19 @@ except ImportError:
     import os
     # 确保当前目录在Python路径中
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    
+    # 尝试导入notification_service
+    try:
+        from models.monitor.notification_service import notification_service
+    except ImportError:
+        # 动态加载notification_service
+        notification_service_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'monitor', 'notification_service.py')
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("notification_service", notification_service_path)
+        notification_service_module = importlib.util.module_from_spec(spec)
+        sys.modules["notification_service"] = notification_service_module
+        spec.loader.exec_module(notification_service_module)
+        notification_service = notification_service_module.notification_service
 
 # 导入ChartGenerator类
 try:
@@ -1543,6 +1557,165 @@ def get_realtime_data():
         })
     except Exception as e:
         logger.error(f'Error getting realtime data: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 系统外通知API
+@app.route('/api/notifications/email', methods=['POST'])
+def send_email_notification():
+    """发送邮件通知API
+    
+    请求体参数：
+    - recipients: 收件人邮箱列表（可选，默认使用配置中的收件人）
+    - subject: 邮件主题
+    - body: 邮件内容
+    - account_id: 账户ID（可选，默认为'default'）
+    """
+    try:
+        data = request.json
+        account_id = data.get('account_id', 'default')
+        
+        # 获取配置的收件人
+        config = notification_manager.get_notification_config(account_id)
+        default_recipients = config.get('email', {}).get('recipients', [])
+        
+        # 使用请求中的收件人，如果没有则使用默认收件人
+        recipients = data.get('recipients', default_recipients)
+        
+        # 如果没有收件人，返回错误
+        if not recipients:
+            return jsonify({
+                'success': False,
+                'message': '没有指定收件人'
+            }), 400
+        
+        # 获取邮件主题和内容
+        subject = data.get('subject', '交易系统通知')
+        body = data.get('body', '')
+        
+        # 发送邮件
+        results = notification_service.send_emails(recipients, subject, body)
+        
+        # 统计成功和失败的数量
+        success_count = sum(1 for success in results.values() if success)
+        failure_count = len(results) - success_count
+        
+        return jsonify({
+            'success': True,
+            'message': f'邮件发送完成，成功{success_count}封，失败{failure_count}封',
+            'results': results
+        })
+    except Exception as e:
+        logger.error(f'Error sending email notification: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/notifications/sms', methods=['POST'])
+def send_sms_notification():
+    """发送短信通知API
+    
+    请求体参数：
+    - recipients: 手机号码列表（可选，默认使用配置中的收件人）
+    - message: 短信内容
+    - account_id: 账户ID（可选，默认为'default'）
+    """
+    try:
+        data = request.json
+        account_id = data.get('account_id', 'default')
+        
+        # 获取配置的收件人
+        config = notification_manager.get_notification_config(account_id)
+        default_recipients = config.get('sms', {}).get('recipients', [])
+        
+        # 使用请求中的收件人，如果没有则使用默认收件人
+        recipients = data.get('recipients', default_recipients)
+        
+        # 如果没有收件人，返回错误
+        if not recipients:
+            return jsonify({
+                'success': False,
+                'message': '没有指定收件人'
+            }), 400
+        
+        # 获取短信内容
+        message = data.get('message', '')
+        
+        # 发送短信
+        results = notification_service.send_smses(recipients, message)
+        
+        # 统计成功和失败的数量
+        success_count = sum(1 for success in results.values() if success)
+        failure_count = len(results) - success_count
+        
+        return jsonify({
+            'success': True,
+            'message': f'短信发送完成，成功{success_count}条，失败{failure_count}条',
+            'results': results
+        })
+    except Exception as e:
+        logger.error(f'Error sending SMS notification: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 批量发送多渠道通知API
+@app.route('/api/notifications/batch', methods=['POST'])
+def send_batch_notifications():
+    """批量发送多渠道通知API
+    
+    请求体参数：
+    - channels: 通知渠道列表，如['email', 'sms']
+    - recipients: 收件人信息，格式为 {'email': ['xxx@example.com'], 'sms': ['13800138000']}
+    - subject: 通知主题（用于邮件）
+    - message: 通知内容
+    - account_id: 账户ID（可选，默认为'default'）
+    """
+    try:
+        data = request.json
+        account_id = data.get('account_id', 'default')
+        
+        # 获取通知渠道
+        channels = data.get('channels', ['email'])
+        
+        # 获取通知内容
+        subject = data.get('subject', '交易系统通知')
+        message = data.get('message', '')
+        
+        # 获取收件人信息
+        recipients = data.get('recipients', {})
+        
+        results = {}
+        
+        # 发送邮件通知
+        if 'email' in channels:
+            email_recipients = recipients.get('email', [])
+            if email_recipients:
+                email_results = notification_service.send_emails(email_recipients, subject, message)
+                results['email'] = email_results
+            else:
+                results['email'] = {'error': '没有指定邮件收件人'}
+        
+        # 发送短信通知
+        if 'sms' in channels:
+            sms_recipients = recipients.get('sms', [])
+            if sms_recipients:
+                sms_results = notification_service.send_smses(sms_recipients, message)
+                results['sms'] = sms_results
+            else:
+                results['sms'] = {'error': '没有指定短信收件人'}
+        
+        return jsonify({
+            'success': True,
+            'message': f'批量通知发送完成',
+            'results': results
+        })
+    except Exception as e:
+        logger.error(f'Error sending batch notifications: {str(e)}')
         return jsonify({
             'success': False,
             'message': str(e)

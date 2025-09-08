@@ -4,6 +4,13 @@
       <h1 class="title">量化交易选股系统</h1>
     </div>
     <div class="header-right">
+      <!-- 通知中心组件 -->
+      <div class="notification-entry" @click="viewAllNotifications">
+        <span class="notification-text">通知中心</span>
+        <NotificationCenter class="notification-component" />
+      </div>
+      
+      <!-- 用户信息 -->
       <el-dropdown trigger="click" @command="handleCommand">
         <span class="user-info">
           <i class="el-icon-user"></i>
@@ -21,8 +28,13 @@
 </template>
 
 <script>
+import NotificationCenter from '@/components/notification/NotificationCenter.vue';
+
 export default {
   name: 'Header',
+  components: {
+    NotificationCenter
+  },
   data() {
     return {
       username: '管理员',
@@ -30,6 +42,9 @@ export default {
     }
   },
   methods: {
+    viewAllNotifications() {
+      this.$router.push('/notifications');
+    },
     handleCommand(command) {
       if (command === 'logout') {
         this.$confirm('确认退出系统吗?', '提示', {
@@ -72,6 +87,26 @@ export default {
   z-index: 10;
 }
 
+.notification-entry {
+  display: flex;
+  align-items: center;
+  margin-right: 20px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.notification-entry:hover {
+  background-color: #f5f7fa;
+}
+
+.notification-text {
+  margin-right: 5px;
+  font-size: 14px;
+  color: #606266;
+}
+
 .logo-container {
   display: flex;
   align-items: center;
@@ -92,6 +127,10 @@ export default {
 .header-right {
   display: flex;
   align-items: center;
+}
+
+.notification-component {
+  margin-right: 20px;
 }
 
 .user-info {

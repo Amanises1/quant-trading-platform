@@ -92,12 +92,7 @@ const routes = [
         component: () => import('../views/system-params/SystemParams.vue'),
         meta: { title: '系统参数管理', requiresAuth: true, roles: ['admin'] }
       },
-      {
-        path: 'database-maintenance',
-        name: 'DatabaseMaintenance',
-        component: () => import('../views/database-maintenance/DatabaseMaintenance.vue'),
-        meta: { title: '数据库维护', requiresAuth: true, roles: ['admin'] }
-      },
+      {        path: 'database-maintenance',        name: 'DatabaseMaintenance',        component: () => import('../views/database-maintenance/DatabaseMaintenance.vue'),        meta: { title: '数据库维护', requiresAuth: true, roles: ['admin'] }      },      {        path: 'notifications',        name: 'Notifications',        component: () => import('../views/notification/NotificationCenterPage.vue'),        meta: { title: '通知中心', requiresAuth: true }      },
       {
         path: 'platform-migration',
         name: 'PlatformMigration',

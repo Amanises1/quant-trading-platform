@@ -259,6 +259,11 @@ class NotificationManager:
         Returns:
             是否应该使用该渠道
         """
+        # 应用内通知(app)始终可用，即使没有配置
+        if channel == 'app':
+            return True
+        
+        # 其他渠道需要检查配置和启用状态
         channel_config = self.get_channel_config(channel)
         return channel_config and channel_config.get('enabled', False)
     
@@ -363,6 +368,52 @@ class NotificationManager:
             'level': level,
             'accountId': risk_data.get('accountId')
         })
+
+    def save_notification_config(self, account_id: str = 'default', config: Dict[str, Any] = None) -> Dict[str, Any]:
+        """保存通知配置到文件
+        
+        Args:
+            account_id: 账户ID
+            config: 要保存的配置
+        
+        Returns:
+            保存后的配置
+        """
+        if config:
+            self.config.update(config)
+        
+        # 如果是特定账户的配置，需要为每个账户创建独立配置
+        if account_id != 'default':
+            if 'account_configs' not in self.config:
+                self.config['account_configs'] = {}
+            
+            if account_id not in self.config['account_configs']:
+                self.config['account_configs'][account_id] = {}
+            
+            # 更新特定账户的配置
+            self.config['account_configs'][account_id].update(config or {})
+            
+        self._save_config(self.config)
+        return self.config.copy()
+    
+    def get_config(self, account_id: str = 'default') -> Dict[str, Any]:
+        """获取通知配置
+        
+        Args:
+            account_id: 账户ID，默认为'default'
+        
+        Returns:
+            通知配置字典
+        """
+        if account_id == 'default':
+            return self.config.copy()
+        
+        # 如果是特定账户的配置，返回该账户的配置（如果存在）
+        if 'account_configs' in self.config and account_id in self.config['account_configs']:
+            return self.config['account_configs'][account_id].copy()
+        
+        # 如果特定账户配置不存在，返回默认配置的副本
+        return self.config.copy()
 
 # 创建全局通知管理器实例
 notification_manager = NotificationManager()

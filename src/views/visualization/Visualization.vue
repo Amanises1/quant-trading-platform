@@ -2,16 +2,14 @@
   <div class="visualization-container">
     <!-- 头部导航 -->
     <div class="header-section">
-      <h1>股票量化交易平台 - 可视化中心</h1>
-      <el-tabs v-model="activeTab" @tab-click="handleTabClick">
+      <h1>股票量化交易平台 - 实时数据可视化</h1>
+      <el-tabs v-model="activeTab">
         <el-tab-pane label="实时数据展示" name="realtime" />
-        <el-tab-pane label="风控数据展示" name="risk" />
-        <el-tab-pane label="通知中心" name="notifications" />
       </el-tabs>
     </div>
 
     <!-- 实时数据展示区域 -->
-    <div v-if="activeTab === 'realtime'" class="realtime-content">
+    <div class="realtime-content">
       <div class="toolbar">
         <el-select v-model="selectedStock" placeholder="选择股票" class="stock-select">
           <el-option label="上证指数 (000001)" value="000001"></el-option>
@@ -118,171 +116,7 @@
       </div>
     </div>
 
-    <!-- 风控数据展示区域 -->
-    <div v-if="activeTab === 'risk'" class="risk-content">
-      <div class="risk-header">
-        <h2>风控数据监控</h2>
-        <el-button type="primary" @click="refreshRiskData">刷新数据</el-button>
-      </div>
-      
-      <div class="risk-overview">
-        <el-card class="risk-card" :class="{ 'risk-high': accountRisk.status === '高风险' }">
-          <template slot="header">
-            <div class="card-header">
-              <span>账户风险状态</span>
-              <el-tag :type="getRiskTagType(accountRisk.status)">{{ accountRisk.status }}</el-tag>
-            </div>
-          </template>
-          <div class="risk-grid">
-            <div class="risk-item">
-              <div class="risk-label">保证金比例</div>
-              <div class="risk-value">{{ accountRisk.marginRatio }}%</div>
-              <div class="risk-desc">当前: {{ accountRisk.marginRatio }}% / 预警线: {{ riskThresholds.marginWarning }}% / 平仓线: {{ riskThresholds.marginLiquidation }}%</div>
-            </div>
-            <div class="risk-item">
-              <div class="risk-label">最大回撤</div>
-              <div class="risk-value">{{ accountRisk.maxDrawdown }}%</div>
-              <div class="risk-desc">历史最大亏损百分比</div>
-            </div>
-            <div class="risk-item">
-              <div class="risk-label">Sharpe比率</div>
-              <div class="risk-value">{{ accountRisk.sharpeRatio }}</div>
-              <div class="risk-desc">风险调整后收益指标</div>
-            </div>
-            <div class="risk-item">
-              <div class="risk-label">波动率</div>
-              <div class="risk-value">{{ accountRisk.volatility }}%</div>
-              <div class="risk-desc">收益率波动性</div>
-            </div>
-            <div class="risk-item">
-              <div class="risk-label">总仓位</div>
-              <div class="risk-value">{{ accountRisk.positionRatio }}%</div>
-              <div class="risk-desc">当前: {{ accountRisk.positionRatio }}% / 上限: {{ riskThresholds.positionLimit }}%</div>
-            </div>
-            <div class="risk-item">
-              <div class="risk-label">单日盈亏</div>
-              <div class="risk-value" :class="accountRisk.dailyProfit > 0 ? 'profit' : 'loss'">
-                {{ accountRisk.dailyProfit > 0 ? '+' : '' }}{{ accountRisk.dailyProfit }}%
-              </div>
-              <div class="risk-desc">今日收益率</div>
-            </div>
-          </div>
-        </el-card>
-      </div>
 
-      <div class="risk-charts">
-        <div class="risk-chart-item">
-          <h3>风险指标走势图</h3>
-          <div class="risk-chart-container" v-html="riskChartHtml"></div>
-        </div>
-        <div class="risk-thresholds">
-          <h3>风险阈值设置</h3>
-          <el-form :model="riskThresholds" label-width="150px">
-            <el-form-item label="保证金预警线">
-              <el-input-number v-model="riskThresholds.marginWarning" :min="10" :max="100" :step="1" />
-              <span style="margin-left: 10px;">%</span>
-            </el-form-item>
-            <el-form-item label="保证金平仓线">
-              <el-input-number v-model="riskThresholds.marginLiquidation" :min="5" :max="50" :step="1" />
-              <span style="margin-left: 10px;">%</span>
-            </el-form-item>
-            <el-form-item label="总仓位上限">
-              <el-input-number v-model="riskThresholds.positionLimit" :min="30" :max="100" :step="5" />
-              <span style="margin-left: 10px;">%</span>
-            </el-form-item>
-            <el-form-item label="单日最大回撤限制">
-              <el-input-number v-model="riskThresholds.maxDrawdownDaily" :min="1" :max="20" :step="1" />
-              <span style="margin-left: 10px;">%</span>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="saveRiskThresholds">保存设置</el-button>
-            </el-form-item>
-          </el-form>
-        </div>
-      </div>
-    </div>
-
-    <!-- 通知展示区域 -->
-    <div v-if="activeTab === 'notifications'" class="notifications-content">
-      <div class="notifications-header">
-        <h2>通知中心</h2>
-        <el-button @click="clearAllNotifications">清空所有通知</el-button>
-      </div>
-      
-      <div class="notifications-filters">
-        <el-select v-model="notificationFilter" placeholder="过滤通知类型">
-          <el-option label="全部通知" value="all"></el-option>
-          <el-option label="交易完成" value="trade"></el-option>
-          <el-option label="风控警报" value="risk"></el-option>
-          <el-option label="账户余额" value="balance"></el-option>
-          <el-option label="系统消息" value="system"></el-option>
-        </el-select>
-        <el-select v-model="notificationStatusFilter" placeholder="过滤通知状态">
-          <el-option label="全部状态" value="all"></el-option>
-          <el-option label="未读" value="unread"></el-option>
-          <el-option label="已读" value="read"></el-option>
-        </el-select>
-      </div>
-      
-      <div class="notifications-list">
-        <el-card 
-          v-for="notification in filteredNotifications" 
-          :key="notification.id"
-          class="notification-card" 
-          :class="{ 'unread': !notification.read }"
-          @click="markAsRead(notification.id)"
-        >
-          <template slot="header">
-            <div class="notification-header">
-              <span>{{ notification.title }}</span>
-              <el-tag :type="getNotificationTagType(notification.type)">{{ getNotificationTypeText(notification.type) }}</el-tag>
-            </div>
-          </template>
-          <div class="notification-content">
-            <p>{{ notification.message }}</p>
-            <div class="notification-meta">
-              <span class="notification-time">{{ formatNotificationTime(notification.timestamp) }}</span>
-              <span v-if="!notification.read" class="notification-unread-dot">●</span>
-            </div>
-          </div>
-        </el-card>
-        
-        <div v-if="filteredNotifications.length === 0" class="no-notifications">
-          <el-empty description="暂无通知"></el-empty>
-        </div>
-      </div>
-      
-      <div class="notification-settings">
-        <h3>通知设置</h3>
-        <el-form :model="notificationSettings">
-          <el-form-item label="交易完成通知">
-            <el-switch v-model="notificationSettings.trade" />
-          </el-form-item>
-          <el-form-item label="风控警报通知">
-            <el-switch v-model="notificationSettings.risk" />
-          </el-form-item>
-          <el-form-item label="账户余额警告">
-            <el-switch v-model="notificationSettings.balance" />
-          </el-form-item>
-          <el-form-item label="系统消息通知">
-            <el-switch v-model="notificationSettings.system" />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" @click="saveNotificationSettings">保存设置</el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-    </div>
-
-    <!-- 消息通知弹窗 -->
-    <el-notification
-      :title="notificationPopup.title"
-      :message="notificationPopup.message"
-      :type="notificationPopup.type"
-      :show-close="true"
-      :duration="5000"
-      v-if="showNotificationPopup"
-    />
   </div>
 </template>
 
@@ -315,122 +149,24 @@ export default {
         showBenchmark: true,
         showDrawdown: true,
         showSignals: true
-      },
-      
-      // 风控数据
-      accountRisk: {
-        status: '低风险',
-        marginRatio: 180,
-        maxDrawdown: -12.5,
-        sharpeRatio: 1.8,
-        volatility: 15.2,
-        positionRatio: 65,
-        dailyProfit: 2.3
-      },
-      riskThresholds: {
-        marginWarning: 130,
-        marginLiquidation: 100,
-        positionLimit: 90,
-        maxDrawdownDaily: 5
-      },
-      riskChartHtml: '',
-      
-      // 通知数据
-      notifications: [
-        {
-          id: 1,
-          title: '交易执行成功',
-          message: '买入贵州茅台(600519) 100股，价格1680.00元',
-          type: 'trade',
-          timestamp: new Date().getTime() - 300000, // 5分钟前
-          read: false
-        },
-        {
-          id: 2,
-          title: '保证金预警',
-          message: '您的保证金比例已降至135%，接近预警线，请及时补充保证金',
-          type: 'risk',
-          timestamp: new Date().getTime() - 900000, // 15分钟前
-          read: false
-        },
-        {
-          id: 3,
-          title: '账户余额不足',
-          message: '您的账户余额不足，部分委托可能无法执行',
-          type: 'balance',
-          timestamp: new Date().getTime() - 1800000, // 30分钟前
-          read: true
-        },
-        {
-          id: 4,
-          title: '系统维护通知',
-          message: '系统将于2023-12-31 22:00-24:00进行例行维护，请提前做好准备',
-          type: 'system',
-          timestamp: new Date().getTime() - 3600000, // 1小时前
-          read: true
-        }
-      ],
-      notificationFilter: 'all',
-      notificationStatusFilter: 'all',
-      notificationSettings: {
-        trade: true,
-        risk: true,
-        balance: true,
-        system: true
-      },
-      
-      // 通知弹窗
-      showNotificationPopup: false,
-      notificationPopup: {
-        title: '',
-        message: '',
-        type: 'info'
       }
     };
   },
-  computed: {
-    // 过滤后的通知列表
-    filteredNotifications() {
-      return this.notifications.filter(notification => {
-        const typeMatch = this.notificationFilter === 'all' || notification.type === this.notificationFilter;
-        const statusMatch = this.notificationStatusFilter === 'all' || 
-          (this.notificationStatusFilter === 'unread' && !notification.read) ||
-          (this.notificationStatusFilter === 'read' && notification.read);
-        return typeMatch && statusMatch;
-      }).sort((a, b) => b.timestamp - a.timestamp);
-    }
-  },
+
   mounted() {
     // 组件挂载后初始化
     this.initialize();
-    // 启动通知轮询
-    this.startNotificationPolling();
   },
   beforeDestroy() {
     // 清理定时器
     if (this.realtimeUpdateInterval) {
       clearInterval(this.realtimeUpdateInterval);
     }
-    if (this.notificationPollingInterval) {
-      clearInterval(this.notificationPollingInterval);
-    }
   },
   methods: {
     // 初始化函数
-    async initialize() {
-      try {
-        // 初始化风险图表
-        await this.generateRiskChart();
-      } catch (error) {
-        console.error('初始化失败:', error);
-      }
-    },
-    
-    // 标签切换处理
-    handleTabClick(tab) {
-      if (tab.name === 'risk') {
-        this.refreshRiskData();
-      }
+    initialize() {
+      // 实时数据可视化模块初始化
     },
     
     // 生成图表
@@ -531,265 +267,6 @@ export default {
         this.realtimeUpdateInterval = setInterval(() => {
           this.generateChart();
         }, 30000);
-      }
-    },
-    
-    // 刷新风险数据
-    async refreshRiskData() {
-      try {
-        // 显示加载中状态
-        this.$message.loading('正在刷新风险数据，请稍候...', 0);
-        
-        // 调用后端API获取风险数据
-        const response = await axios.get('/api/risk/get_data');
-        
-        if (response.data.success) {
-          this.accountRisk = response.data.risk_data;
-          this.riskThresholds = response.data.thresholds;
-          await this.generateRiskChart();
-          this.$message.success('风险数据刷新成功');
-        } else {
-          this.$message.error(`风险数据刷新失败: ${response.data.message}`);
-        }
-      } catch (error) {
-        console.error('刷新风险数据时出错:', error);
-        // 使用模拟数据
-        this.$message.warning('使用模拟风险数据');
-        this.generateMockRiskData();
-        await this.generateRiskChart();
-      } finally {
-        // 关闭加载中状态
-        this.$message.closeAll();
-      }
-    },
-    
-    // 生成风险图表
-    async generateRiskChart() {
-      try {
-        const params = {
-          start_date: this.formatDate(this.dateRange[0]),
-          end_date: this.formatDate(this.dateRange[1])
-        };
-        
-        const response = await axios.post('/api/risk/generate_chart', params);
-        
-        if (response.data.success) {
-          this.riskChartHtml = response.data.chart_html;
-        } else {
-          console.error('生成风险图表失败:', response.data.message);
-        }
-      } catch (error) {
-        console.error('生成风险图表时出错:', error);
-        // 使用模拟图表
-        this.riskChartHtml = '<div style="text-align: center; padding: 50px; color: #999;">模拟风险趋势图</div>';
-      }
-    },
-    
-    // 保存风险阈值设置
-    async saveRiskThresholds() {
-      try {
-        const response = await axios.post('/api/risk/update_thresholds', {
-          thresholds: this.riskThresholds
-        });
-        
-        if (response.data.success) {
-          this.$message.success('风险阈值设置保存成功');
-          // 显示通知
-          this.showNotification({
-            title: '风险阈值设置已更新',
-            message: '您的风险阈值设置已成功保存',
-            type: 'success'
-          });
-        } else {
-          this.$message.error(`保存失败: ${response.data.message}`);
-        }
-      } catch (error) {
-        console.error('保存风险阈值设置时出错:', error);
-        this.$message.error('保存失败，请稍后重试');
-      }
-    },
-    
-    // 生成模拟风险数据
-    generateMockRiskData() {
-      // 随机波动当前风险数据
-      const volatilityFactor = 0.05; // 5%的波动
-      
-      this.accountRisk = {
-        ...this.accountRisk,
-        marginRatio: Math.max(100, this.accountRisk.marginRatio * (1 + (Math.random() - 0.5) * 2 * volatilityFactor)).toFixed(2),
-        maxDrawdown: (this.accountRisk.maxDrawdown * (1 + (Math.random() - 0.5) * 2 * volatilityFactor)).toFixed(2),
-        sharpeRatio: (this.accountRisk.sharpeRatio * (1 + (Math.random() - 0.5) * 2 * volatilityFactor)).toFixed(2),
-        volatility: (this.accountRisk.volatility * (1 + (Math.random() - 0.5) * 2 * volatilityFactor)).toFixed(2),
-        positionRatio: Math.min(100, Math.max(0, this.accountRisk.positionRatio * (1 + (Math.random() - 0.5) * 2 * volatilityFactor))).toFixed(2),
-        dailyProfit: (this.accountRisk.dailyProfit * (1 + (Math.random() - 0.5) * 2 * 0.2)).toFixed(2) // 20%的波动
-      };
-      
-      // 更新风险状态
-      if (this.accountRisk.marginRatio < this.riskThresholds.marginLiquidation) {
-        this.accountRisk.status = '高风险';
-      } else if (this.accountRisk.marginRatio < this.riskThresholds.marginWarning) {
-        this.accountRisk.status = '中风险';
-      } else {
-        this.accountRisk.status = '低风险';
-      }
-    },
-    
-    // 获取风险标签类型
-    getRiskTagType(status) {
-      switch(status) {
-        case '高风险':
-          return 'danger';
-        case '中风险':
-          return 'warning';
-        case '低风险':
-          return 'success';
-        default:
-          return 'info';
-      }
-    },
-    
-    // 标记通知为已读
-    markAsRead(notificationId) {
-      const notification = this.notifications.find(n => n.id === notificationId);
-      if (notification && !notification.read) {
-        notification.read = true;
-      }
-    },
-    
-    // 清空所有通知
-    clearAllNotifications() {
-      this.$confirm('确定要清空所有通知吗？', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(() => {
-        this.notifications = [];
-        this.$message.success('所有通知已清空');
-      }).catch(() => {
-        // 用户取消操作
-      });
-    },
-    
-    // 获取通知类型文本
-    getNotificationTypeText(type) {
-      switch(type) {
-        case 'trade':
-          return '交易完成';
-        case 'risk':
-          return '风控警报';
-        case 'balance':
-          return '账户余额';
-        case 'system':
-          return '系统消息';
-        default:
-          return '未知类型';
-      }
-    },
-    
-    // 获取通知标签类型
-    getNotificationTagType(type) {
-      switch(type) {
-        case 'trade':
-          return 'success';
-        case 'risk':
-          return 'danger';
-        case 'balance':
-          return 'warning';
-        case 'system':
-          return 'info';
-        default:
-          return 'default';
-      }
-    },
-    
-    // 格式化通知时间
-    formatNotificationTime(timestamp) {
-      const now = new Date().getTime();
-      const diff = now - timestamp;
-      
-      if (diff < 60000) {
-        return '刚刚';
-      } else if (diff < 3600000) {
-        return `${Math.floor(diff / 60000)}分钟前`;
-      } else if (diff < 86400000) {
-        return `${Math.floor(diff / 3600000)}小时前`;
-      } else {
-        return `${Math.floor(diff / 86400000)}天前`;
-      }
-    },
-    
-    // 保存通知设置
-    saveNotificationSettings() {
-      // 在实际应用中，这里会调用API保存设置到后端
-      this.$message.success('通知设置已保存');
-      // 显示通知
-      this.showNotification({
-        title: '通知设置已更新',
-        message: '您的通知设置已成功保存',
-        type: 'success'
-      });
-    },
-    
-    // 显示通知弹窗
-    showNotification(notification) {
-      this.notificationPopup = {
-        title: notification.title,
-        message: notification.message,
-        type: notification.type || 'info'
-      };
-      this.showNotificationPopup = true;
-      
-      // 5秒后自动关闭
-      setTimeout(() => {
-        this.showNotificationPopup = false;
-      }, 5000);
-    },
-    
-    // 启动通知轮询
-    startNotificationPolling() {
-      // 每1分钟检查一次新通知
-      this.notificationPollingInterval = setInterval(() => {
-        this.checkForNewNotifications();
-      }, 60000);
-    },
-    
-    // 检查新通知
-    async checkForNewNotifications() {
-      try {
-        const response = await axios.get('/api/notifications/get_latest');
-        
-        if (response.data.success && response.data.new_notifications && response.data.new_notifications.length > 0) {
-          // 添加新通知到列表
-          response.data.new_notifications.forEach(notification => {
-            // 检查是否已存在相同ID的通知
-            if (!this.notifications.find(n => n.id === notification.id)) {
-              this.notifications.unshift(notification);
-              // 显示通知弹窗
-              this.showNotification({
-                title: notification.title,
-                message: notification.message,
-                type: this.getNotificationTypeForPopup(notification.type)
-              });
-            }
-          });
-        }
-      } catch (error) {
-        console.error('检查新通知时出错:', error);
-        // 静默失败，不影响用户体验
-      }
-    },
-    
-    // 获取通知弹窗类型
-    getNotificationTypeForPopup(type) {
-      switch(type) {
-        case 'risk':
-          return 'error';
-        case 'balance':
-          return 'warning';
-        case 'trade':
-          return 'success';
-        default:
-          return 'info';
       }
     },
     
@@ -1141,6 +618,7 @@ export default {
   color: #909399;
 }
 
+/* 通知设置样式 */
 .notification-settings {
   background: #f5f7fa;
   border-radius: 4px;
@@ -1152,6 +630,210 @@ export default {
   font-weight: bold;
   color: #1f2937;
   margin-bottom: 15px;
+}
+
+/* 通知类型设置卡片 */
+.notification-type-card {
+  background: white;
+  border-radius: 4px;
+  padding: 15px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.notification-type-card h4 {
+  font-size: 14px;
+  font-weight: bold;
+  color: #409eff;
+  margin-bottom: 15px;
+}
+
+/* 通知类型设置项 */
+.notification-type-settings {
+  padding: 10px 0;
+}
+
+.notification-type-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.notification-type-item:last-child {
+  border-bottom: none;
+}
+
+.notification-type-label {
+  font-size: 14px;
+  color: #606266;
+}
+
+/* 通知渠道设置卡片 */
+.notification-channel-card {
+  background: white;
+  border-radius: 4px;
+  padding: 15px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.notification-channel-card h4 {
+  font-size: 14px;
+  font-weight: bold;
+  color: #67c23a;
+  margin-bottom: 15px;
+}
+
+/* 渠道设置样式 */
+.channel-settings {
+  margin-bottom: 25px;
+}
+
+.channel-settings h4 {
+  font-size: 14px;
+  font-weight: bold;
+  color: #67c23a;
+  margin-bottom: 15px;
+}
+
+/* 渠道开关项 */
+.channel-toggle-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.channel-toggle-label {
+  font-size: 14px;
+  color: #606266;
+}
+
+/* 渠道配置项 */
+.channel-config-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.channel-config-item:last-child {
+  border-bottom: none;
+}
+
+.channel-config-label {
+  font-size: 14px;
+  color: #606266;
+  width: 120px;
+}
+
+/* 收件人管理 */
+.recipients-container {
+  padding: 10px 0;
+}
+
+.recipient-input-group {
+  margin-bottom: 10px;
+}
+
+/* 收件人部分特殊样式 */
+.recipients-section {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.recipients-section .recipients-container {
+  width: 100%;
+}
+
+.recipients-list {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.recipients-list .el-tag {
+  margin: 5px 5px 5px 0;
+  background-color: #f4f4f5;
+  color: #606266;
+}
+
+.recipients-list .el-tag .el-tag__close {
+  color: #909399;
+}
+
+.recipients-list .el-tag .el-tag__close:hover {
+  color: #606266;
+}
+
+/* 收件人列表样式 */
+.recipients-list {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.recipient-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 5px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #e4e7ed;
+}
+
+.recipient-item .recipient-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipient-item .remove-btn {
+  color: #f56c6c;
+  cursor: pointer;
+}
+
+/* 测试通知区域 */
+.test-notification-section {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #fafafa;
+  border-radius: 4px;
+  border: 1px solid #e4e7ed;
+}
+
+.test-notification-section h4 {
+  font-size: 14px;
+  font-weight: bold;
+  color: #606266;
+  margin-bottom: 15px;
+}
+
+/* 测试按钮区域 */
+.test-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+/* 保存按钮区域 */
+.save-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e4e7ed;
 }
 
 /* 响应式设计 */
