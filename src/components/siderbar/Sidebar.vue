@@ -58,10 +58,6 @@
           <i class="el-icon-s-cooperation"/>
           <span slot="title">模型全生命周期管理</span>
         </el-menu-item>
-        <el-menu-item index="/risk-warning">
-          <i class="el-icon-warning"/>
-          <span slot="title">风险预警与熔断</span>
-        </el-menu-item>
         <el-menu-item index="/historical-data">
           <i class="el-icon-document"/>
           <span slot="title">加载历史数据</span>
