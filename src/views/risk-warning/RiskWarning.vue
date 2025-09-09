@@ -104,9 +104,9 @@
               </div>
               <div class="risk-desc">风险调整后收益指标</div>
               <div class="mt-2 sharpe-info">
-                <span class="sharpe-range">< 0.5: 低</span>
+                <span class="sharpe-range">&lt; 0.5: 低</span>
                 <span class="sharpe-range">0.5-1.5: 中</span>
-                <span class="sharpe-range">> 1.5: 高</span>
+                <span class="sharpe-range">&gt; 1.5: 高</span>
               </div>
             </div>
             <div class="risk-item animated fadeInUp" style="animation-delay: 0.4s">
