@@ -22,10 +22,6 @@
           <i class="el-icon-data-line"/>
           <span slot="title">多维特征可视化</span>
         </el-menu-item>
-        <el-menu-item index="/risk-warning">
-          <i class="el-icon-warning"/>
-          <span slot="title">风险预警与熔断</span>
-        </el-menu-item>
         <el-menu-item index="/trade-monitor">
           <i class="el-icon-monitor"/>
           <span slot="title">实时交易监控</span>
