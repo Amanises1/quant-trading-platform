@@ -1,0 +1,113 @@
+{
+  "channels": {
+    "email": {
+      "enabled": true,
+      "recipients": [
+        "test@example.com"
+      ]
+    },
+    "sms": {
+      "enabled": true,
+      "recipients": [
+        "13900139000"
+      ]
+    }
+  },
+  "notification_types": {
+    "trade": {
+      "enabled": true,
+      "channels": [
+        "app",
+        "email"
+      ],
+      "min_amount": 10000
+    },
+    "risk": {
+      "enabled": true,
+      "channels": [
+        "app",
+        "email",
+        "sms"
+      ],
+      "levels": [
+        "warning",
+        "danger"
+      ]
+    },
+    "system": {
+      "enabled": true,
+      "channels": [
+        "app",
+        "email"
+      ]
+    },
+    "balance": {
+      "enabled": true,
+      "channels": [
+        "app",
+        "email"
+      ],
+      "min_balance": 10000
+    }
+  },
+  "trade": true,
+  "risk": true,
+  "balance": true,
+  "system": true,
+  "email": {
+    "enabled": true,
+    "smtp_server": "test-smtp.example.com",
+    "smtp_port": 587,
+    "username": "test@example.com",
+    "password": "test-password",
+    "from_email": "test@example.com",
+    "recipients": [
+      "user1@example.com",
+      "user2@example.com"
+    ]
+  },
+  "sms": {
+    "enabled": false,
+    "api_key": "test-api-key",
+    "api_secret": "test-api-secret",
+    "sender": "TestBot",
+    "recipients": [
+      "13800138000"
+    ]
+  },
+  "in_app": {
+    "enabled": true
+  },
+  "account_configs": {
+    "test-account": {
+      "trade": true,
+      "risk": true,
+      "balance": true,
+      "system": true,
+      "email": {
+        "enabled": true,
+        "smtp_server": "test-smtp.example.com",
+        "smtp_port": 587,
+        "username": "test@example.com",
+        "password": "test-password",
+        "from_email": "test@example.com",
+        "recipients": [
+          "user1@example.com",
+          "user2@example.com"
+        ]
+      },
+      "sms": {
+        "enabled": false,
+        "api_key": "test-api-key",
+        "api_secret": "test-api-secret",
+        "sender": "TestBot",
+        "recipients": [
+          "13800138000"
+        ]
+      },
+      "in_app": {
+        "enabled": true
+      }
+    }
+  }
+}

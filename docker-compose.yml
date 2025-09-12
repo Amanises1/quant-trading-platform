@@ -1,0 +1,38 @@
+version: '3'
+services:
+  frontend:
+    build: 
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: quant-trading-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - python-service
+    environment:
+      - VUE_APP_API_URL=http://python-service:5000
+
+  python-service:
+    build: 
+      context: .
+      dockerfile: Dockerfile.python
+    container_name: quant-trading-python
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+
+  db-viewer:
+    image: sqlitebrowser/sqlitebrowser
+    container_name: quant-trading-db-viewer
+    volumes:
+      - ./data:/data
+    ports:
+      - "3000:3000"
+    depends_on:
+      - python-service
+
+volumes:
+  data_volume:

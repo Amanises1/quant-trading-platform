@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
     <Sidebar class="sidebar" @collapse-change="handleSidebarCollapse" />
-    <div class="main-container" :class="{'is-collapsed': isCollapsed}">
+    <div class="main-container">
       <Header class="header" />
       <div class="content">
         <router-view />
@@ -38,30 +38,21 @@ export default {
   height: 100vh;
   width: 100%;
   display: flex;
+  overflow: hidden;
 }
 
 .sidebar {
-  width: 220px;
   height: 100%;
-  position: fixed;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  z-index: 1001;
-  transition: width 0.3s;
+  flex-shrink: 0;
   overflow-y: auto;
 }
 
 .main-container {
   flex: 1;
-  margin-left: 220px;
   display: flex;
   flex-direction: column;
-  transition: margin-left 0.3s;
-}
-
-.main-container.is-collapsed {
-  margin-left: 64px;
+  transition: all 0.6s cubic-bezier(0.19, 1, 0.22, 1);
+  overflow: hidden;
 }
 
 .header {
@@ -73,5 +64,6 @@ export default {
   flex: 1;
   overflow-y: auto;
   background-color: #f5f7fa;
+  transition: all 0.6s cubic-bezier(0.19, 1, 0.22, 1);
 }
 </style>

@@ -1,0 +1,24 @@
+
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: quant_postgres
+    environment:
+      POSTGRES_DB: quant_db
+      POSTGRES_USER: quant_user
+      POSTGRES_PASSWORD: quant_pass
+    ports:
+      - "5432:5432"  # 映射容器的 5432 端口到宿主机的 5432 端口
+    volumes:
+      - ./data:/var/lib/postgresql/data  # 将宿主机上的 ./data 目录挂载到容器中的 /var/lib/postgresql/data
+    networks:
+      - quant_network
+
+volumes:
+  postgres_data:  # 定义一个名为 postgres_data 的卷
+    external: false
+
+networks:
+  quant_network:  # 定义一个名为 quant_network 的网络
+    driver: bridge
