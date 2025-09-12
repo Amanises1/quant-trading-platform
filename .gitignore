@@ -206,3 +206,14 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 node_modules
+
+# Quant Trading Platform specific ignores
+# Backtest reports and temporary charts
+backtest_report_*.html
+temp_chart_*.png
+
+# Demo files
+src/demo_backtest.py
+
+# Test directories
+src/models/tests/

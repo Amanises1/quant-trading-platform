@@ -36,7 +36,7 @@ class BacktestEngine:
         self.positions = []
         self.equity_curve = None
     
-    def run(self, data: pd.DataFrame, signal_column: str = 'signal') -> Dict:
+    def run(self, data: pd.DataFrame, signal_column: str = 'signal') -> pd.DataFrame:
         """
         执行回测
         
@@ -45,7 +45,7 @@ class BacktestEngine:
             signal_column: 信号列名，默认为'signal'
             
         返回:
-            回测结果字典
+            回测结果DataFrame
         """
         # 验证数据
         required_columns = ['open', 'high', 'low', 'close', 'volume', signal_column]
@@ -53,7 +53,21 @@ class BacktestEngine:
         
         if missing_columns:
             self.logger.error(f"数据中缺少以下列: {missing_columns}")
-            return {}
+            return pd.DataFrame()        
+        
+        # 检查数据是否有NaN值
+        if data.isnull().values.any():
+            self.logger.warning("输入数据包含NaN值，将尝试处理")
+            # 填充NaN值
+            data = data.ffill().bfill()
+        
+        # 确保价格数据为正数
+        price_columns = ['open', 'high', 'low', 'close']
+        for col in price_columns:
+            if (data[col] <= 0).any():
+                self.logger.warning(f"{col}列包含非正数，将替换为最小正数")
+                min_positive = data[col][data[col] > 0].min() if (data[col] > 0).any() else 1.0
+                data.loc[data[col] <= 0, col] = min_positive
         
         # 初始化回测状态
         initial_capital = self.config['initial_capital']
@@ -66,14 +80,19 @@ class BacktestEngine:
         
         # 初始化列
         results['position'] = 0       # 持仓状态
-        results['entry_price'] = 0.0   # 入场价格
-        results['exit_price'] = 0.0    # 出场价格
+        results['entry_price'] = 1.0   # 入场价格，设置为合理的默认值
+        results['exit_price'] = 1.0    # 出场价格，设置为合理的默认值
         results['trade_profit'] = 0.0  # 交易盈亏
-        results['equity'] = initial_capital  # 账户权益
+        results['equity'] = float(initial_capital)  # 账户权益，确保为float类型
+        
+        # 添加调试列
+        results['capital_to_use'] = 0.0
+        results['position_size_units'] = 0.0
+        results['commission'] = 0.0
         
         # 当前持仓状态
         current_position = 0
-        entry_price = 0.0
+        entry_price = 1.0  # 设置为合理的默认值，避免除以0
         entry_index = 0
         
         # 遍历数据执行回测
@@ -92,10 +111,25 @@ class BacktestEngine:
             if signal == 1 and current_position == 0:  # 买入信号且当前无持仓
                 # 计算买入价格（考虑滑点）
                 entry_price = current_row['open'] * (1 + slippage)
+                if np.isnan(entry_price) or entry_price <= 0:
+                    self.logger.warning(f"无效的入场价格: {entry_price}，使用当前开盘价代替")
+                    entry_price = current_row['open']
                 
-                # 计算买入数量
+                # 计算买入数量，添加检查避免除以0或NaN
                 capital_to_use = results.at[i-1, 'equity'] * position_size
+                if np.isnan(capital_to_use) or capital_to_use <= 0:
+                    self.logger.warning(f"无效的可用资金: {capital_to_use}，使用初始资金代替")
+                    capital_to_use = initial_capital * position_size
+                    results.at[i-1, 'equity'] = initial_capital  # 修复上一行的权益
+                
                 position_size_units = capital_to_use / entry_price
+                if np.isnan(position_size_units) or position_size_units <= 0:
+                    self.logger.warning("计算得到无效的持仓数量，使用固定数量1代替")
+                    position_size_units = 1.0
+                
+                # 保存用于调试
+                results.at[i, 'capital_to_use'] = capital_to_use
+                results.at[i, 'position_size_units'] = position_size_units
                 
                 # 更新持仓状态
                 current_position = 1
@@ -105,29 +139,65 @@ class BacktestEngine:
                 results.at[i, 'entry_price'] = entry_price
                 results.at[i, 'position'] = current_position
                 
+                # 计算佣金
+                commission = capital_to_use * commission_rate
+                if np.isnan(commission) or commission < 0:
+                    self.logger.warning("计算得到无效的佣金，使用0代替")
+                    commission = 0.0
+                
                 # 记录交易
                 self.trades.append({
                     'type': 'buy',
                     'date': current_row.name,
                     'price': entry_price,
                     'units': position_size_units,
-                    'commission': capital_to_use * commission_rate
+                    'commission': commission
                 })
                 
+                # 保存佣金用于调试
+                results.at[i, 'commission'] = commission
+                
                 # 更新账户权益（扣除佣金）
-                results.at[i, 'equity'] = results.at[i-1, 'equity'] - (capital_to_use * commission_rate)
+                new_equity = results.iloc[i-1, results.columns.get_loc('equity')] - commission
+                if np.isnan(new_equity) or new_equity < 0:
+                    self.logger.warning("计算得到无效的权益，保持原值")
+                    new_equity = results.iloc[i-1, results.columns.get_loc('equity')]
+                
+                results.iloc[i, results.columns.get_loc('equity')] = new_equity
                 
             elif (signal == -1 or signal == 0) and current_position == 1:  # 卖出信号且当前有持仓
                 # 计算卖出价格（考虑滑点）
                 exit_price = current_row['open'] * (1 - slippage)
+                if np.isnan(exit_price) or exit_price <= 0:
+                    self.logger.warning(f"无效的出场价格: {exit_price}，使用当前开盘价代替")
+                    exit_price = current_row['open']
                 
-                # 计算持仓市值
+                # 计算持仓市值，添加检查避免除以0或NaN
                 capital_used = results.at[entry_index, 'equity'] * position_size
+                if np.isnan(capital_used) or capital_used <= 0:
+                    self.logger.warning(f"无效的使用资金: {capital_used}，使用初始资金代替")
+                    capital_used = initial_capital * position_size
+                
+                if entry_price <= 0 or np.isnan(entry_price):
+                    self.logger.warning(f"无效的入场价格: {entry_price}，使用当前开盘价代替")
+                    entry_price = current_row['open']
+                
                 position_size_units = capital_used / entry_price
+                if np.isnan(position_size_units) or position_size_units <= 0:
+                    self.logger.warning("计算得到无效的持仓数量，使用固定数量1代替")
+                    position_size_units = 1.0
+                
                 position_value = position_size_units * exit_price
+                if np.isnan(position_value) or position_value <= 0:
+                    self.logger.warning("计算得到无效的持仓市值，使用开盘价计算")
+                    position_value = position_size_units * current_row['open']
                 
                 # 计算交易盈亏
                 trade_profit = position_value - capital_used
+                if np.isnan(trade_profit):
+                    self.logger.warning("计算得到NaN的交易盈亏，使用0代替")
+                    trade_profit = 0.0
+                
                 results.at[i, 'trade_profit'] = trade_profit
                 
                 # 更新持仓状态
@@ -137,32 +207,84 @@ class BacktestEngine:
                 results.at[i, 'exit_price'] = exit_price
                 results.at[i, 'position'] = current_position
                 
+                # 计算佣金
+                commission = position_value * commission_rate
+                if np.isnan(commission):
+                    self.logger.warning("计算得到NaN的佣金，使用0代替")
+                    commission = 0.0
+                
+                # 计算佣金
+                commission = position_value * commission_rate
+                if np.isnan(commission) or commission < 0:
+                    self.logger.warning("计算得到无效的佣金，使用0代替")
+                    commission = 0.0
+                
                 # 记录交易
                 self.trades.append({
                     'type': 'sell',
                     'date': current_row.name,
                     'price': exit_price,
                     'units': position_size_units,
-                    'commission': position_value * commission_rate,
+                    'commission': commission,
                     'profit': trade_profit
                 })
                 
+                # 保存佣金用于调试
+                results.at[i, 'commission'] = commission
+                
                 # 更新账户权益（加上交易盈亏，扣除佣金）
-                results.at[i, 'equity'] = results.at[i-1, 'equity'] + trade_profit - (position_value * commission_rate)
+                new_equity = results.iloc[i-1, results.columns.get_loc('equity')] + trade_profit - commission
+                if np.isnan(new_equity) or new_equity < 0:
+                    self.logger.warning("计算得到无效的权益，保持原值")
+                    new_equity = results.iloc[i-1, results.columns.get_loc('equity')]
+                
+                results.iloc[i, results.columns.get_loc('equity')] = new_equity
                 
             else:  # 无交易
                 # 如果有持仓，更新账户权益（根据持仓市值变化）
                 if current_position == 1:
                     capital_used = results.at[entry_index, 'equity'] * position_size
+                    if np.isnan(capital_used) or capital_used <= 0:
+                        self.logger.warning(f"无效的使用资金: {capital_used}，使用初始资金代替")
+                        capital_used = initial_capital * position_size
+                    
+                    if entry_price <= 0 or np.isnan(entry_price):
+                        self.logger.warning(f"无效的入场价格: {entry_price}，使用当前开盘价代替")
+                        entry_price = current_row['open']
+                    
                     position_size_units = capital_used / entry_price
+                    if np.isnan(position_size_units) or position_size_units <= 0:
+                        self.logger.warning("计算得到无效的持仓数量，使用固定数量1代替")
+                        position_size_units = 1.0
+                    
                     current_position_value = position_size_units * current_row['close']
+                    if np.isnan(current_position_value) or current_position_value <= 0:
+                        self.logger.warning("计算得到无效的当前持仓市值，使用开盘价计算")
+                        current_position_value = position_size_units * current_row['open']
+                    
                     prev_position_value = position_size_units * prev_row['close']
+                    if np.isnan(prev_position_value) or prev_position_value <= 0:
+                        self.logger.warning("计算得到无效的前一持仓市值，使用开盘价计算")
+                        prev_position_value = position_size_units * prev_row['open']
                     
                     # 更新账户权益
-                    results.at[i, 'equity'] = results.at[i-1, 'equity'] + (current_position_value - prev_position_value)
+                    new_equity = results.iloc[i-1, results.columns.get_loc('equity')] + (current_position_value - prev_position_value)
+                    if np.isnan(new_equity) or new_equity < 0:
+                        self.logger.warning("计算得到无效的权益，保持原值")
+                        new_equity = results.iloc[i-1, results.columns.get_loc('equity')]
+                    
+                    results.iloc[i, results.columns.get_loc('equity')] = new_equity
                 else:
                     # 无持仓，权益不变
-                    results.at[i, 'equity'] = results.at[i-1, 'equity']
+                    results.iloc[i, results.columns.get_loc('equity')] = results.iloc[i-1, results.columns.get_loc('equity')]
+        
+        # 修复权益曲线中的NaN值
+        if results['equity'].isnull().any():
+            self.logger.warning("权益曲线中包含NaN值，将尝试修复")
+            # 使用前向填充和后向填充修复NaN（使用推荐的方法）
+            results['equity'] = results['equity'].ffill().bfill()
+            # 如果仍然有NaN，使用初始资金填充
+            results['equity'] = results['equity'].fillna(initial_capital)
         
         # 保存回测结果
         self.results = results
@@ -171,10 +293,18 @@ class BacktestEngine:
         # 计算回测绩效指标
         performance_metrics = self._calculate_performance_metrics()
         
-        # 记录回测完成
-        self.logger.info(f"回测完成，总交易次数: {len(self.trades)}，最终权益: {results.iloc[-1]['equity']:.2f}")
+        # 获取最终权益并确保它是有效的
+        final_equity = results.iloc[-1]['equity']
+        if np.isnan(final_equity) or final_equity < 0:
+            self.logger.warning(f"最终权益无效: {final_equity}，使用初始资金代替")
+            final_equity = initial_capital
+            results.iloc[-1, results.columns.get_loc('equity')] = final_equity
         
-        return performance_metrics
+        # 记录回测完成
+        self.logger.info(f"回测完成，总交易次数: {len(self.trades)}，最终权益: {final_equity:.2f}")
+        
+        # 返回完整的回测结果DataFrame，而不是仅返回绩效指标字典
+        return results
     
     def _calculate_performance_metrics(self) -> Dict:
         """
@@ -183,24 +313,47 @@ class BacktestEngine:
         返回:
             绩效指标字典
         """
-        if self.results is None or self.equity_curve is None:
+        if self.results is None:
             self.logger.error("没有回测结果可供分析")
             return {}
         
+        # 确保equity_curve是有效的
+        if self.equity_curve is None or self.equity_curve.empty:
+            self.logger.warning("equity_curve无效，尝试从results中重新创建")
+            if 'equity' in self.results.columns:
+                self.equity_curve = self.results[['equity']].copy()
+            else:
+                self.logger.error("results中没有equity列")
+                return {}
+        
         # 提取权益曲线
-        equity = self.equity_curve['equity']
+        equity = self.equity_curve['equity'].copy()
+        
+        # 处理可能的NaN值
+        if equity.isnull().any():
+            self.logger.warning("权益曲线中包含NaN值，将尝试修复")
+            # 使用前向填充和后向填充修复NaN（使用推荐的方法）
+            equity = equity.ffill().bfill()
+            # 如果仍然有NaN，使用初始资金填充
+            initial_capital = self.config['initial_capital']
+            equity = equity.fillna(initial_capital)
         
         # 计算收益率
         initial_capital = self.config['initial_capital']
         final_equity = equity.iloc[-1]
+        
+        # 确保final_equity是有效的
+        if np.isnan(final_equity) or final_equity <= 0:
+            self.logger.warning(f"最终权益无效: {final_equity}，使用初始资金代替")
+            final_equity = initial_capital
         total_return = (final_equity / initial_capital) - 1
         
         # 计算年化收益率（假设252个交易日）
         n_days = len(equity)
         annual_return = (1 + total_return) ** (252 / n_days) - 1
         
-        # 计算日收益率
-        daily_returns = equity.pct_change().dropna()
+        # 计算日收益率，指定fill_method=None以避免FutureWarning
+        daily_returns = equity.pct_change(fill_method=None).dropna()
         
         # 计算波动率（年化）
         volatility = daily_returns.std() * np.sqrt(252)
