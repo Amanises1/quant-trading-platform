@@ -112,6 +112,82 @@
             </el-table>
           </div>
 
+          <!-- 买入操作 -->
+          <div class="buy-section">
+            <h3>买入股票</h3>
+            <el-form :model="buyForm" ref="buyForm" :rules="{
+              stockCode: [{ required: true, message: '请输入股票代码', trigger: 'blur' }],
+              stockName: [{ required: true, message: '请输入股票名称', trigger: 'blur' }],
+              price: [{ required: true, type: 'number', min: 0, message: '请输入有效的价格', trigger: 'blur' }],
+              quantity: [{ required: true, type: 'number', min: 1, message: '请输入有效的数量', trigger: 'blur' }]
+            }" label-width="120px">
+              <el-row :gutter="20">
+                <el-col :span="6">
+                  <el-form-item label="股票代码" prop="stockCode">
+                    <el-input v-model="buyForm.stockCode" placeholder="请输入股票代码"></el-input>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="股票名称" prop="stockName">
+                    <el-input v-model="buyForm.stockName" placeholder="请输入股票名称"></el-input>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="买入价格" prop="price">
+                    <el-input-number v-model="buyForm.price" :min="0" :step="0.01" style="width: 100%" placeholder="请输入买入价格"></el-input-number>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="买入数量" prop="quantity">
+                    <el-input-number v-model="buyForm.quantity" :min="1" :step="100" style="width: 100%" placeholder="请输入买入数量"></el-input-number>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-form-item>
+                <el-button type="primary" @click="buyStock('buyForm')">买入</el-button>
+                <el-button @click="$refs.buyForm.resetFields()">重置</el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+
+          <!-- 卖出操作 -->
+          <div class="buy-section">
+            <h3>卖出股票</h3>
+            <el-form :model="sellForm" ref="sellForm" :rules="{
+              stockCode: [{ required: true, message: '请输入股票代码', trigger: 'blur' }],
+              stockName: [{ required: true, message: '请输入股票名称', trigger: 'blur' }],
+              price: [{ required: true, type: 'number', min: 0, message: '请输入有效的价格', trigger: 'blur' }],
+              quantity: [{ required: true, type: 'number', min: 1, message: '请输入有效的数量', trigger: 'blur' }]
+            }" label-width="120px">
+              <el-row :gutter="20">
+                <el-col :span="6">
+                  <el-form-item label="股票代码" prop="stockCode">
+                    <el-input v-model="sellForm.stockCode" placeholder="请输入股票代码"></el-input>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="股票名称" prop="stockName">
+                    <el-input v-model="sellForm.stockName" placeholder="请输入股票名称"></el-input>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="卖出价格" prop="price">
+                    <el-input-number v-model="sellForm.price" :min="0" :step="0.01" style="width: 100%" placeholder="请输入卖出价格"></el-input-number>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="卖出数量" prop="quantity">
+                    <el-input-number v-model="sellForm.quantity" :min="1" :step="100" style="width: 100%" placeholder="请输入卖出数量"></el-input-number>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-form-item>
+                <el-button type="primary" @click="sellPosition('sellForm')">卖出</el-button>
+                <el-button @click="$refs.sellForm.resetFields()">重置</el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+
           <!-- 交易历史 -->
           <div class="trade-history-section">
             <h3>今日交易历史</h3>
@@ -598,7 +674,23 @@ export default {
       
       // 对话框控制
       detailDialogVisible: false,
-      selectedWarning: null
+      selectedWarning: null,
+      
+      // 买入表单数据
+      buyForm: {
+        stockCode: '',
+        stockName: '',
+        price: 0,
+        quantity: 0
+      },
+      
+      // 卖出表单数据
+      sellForm: {
+        stockCode: '',
+        stockName: '',
+        price: 0,
+        quantity: 0
+      }
     }
   },
   mounted() {
@@ -1551,7 +1643,7 @@ export default {
           fee: 0.63,
           status: 'filled'
         },
-        {
+        {          
           timestamp: formatTime(60),
           symbol: '600036',
           name: '招商银行',
@@ -1563,6 +1655,237 @@ export default {
           status: 'pending'
         }
       ]
+    },
+    
+    // 卖出股票
+    sellPosition(formName) {
+      // 验证卖出表单
+      const form = this.$refs[formName]
+      if (!form) {
+        this.$message({ type: 'error', message: '表单引用不存在' })
+        return
+      }
+      
+      form.validate((valid) => {
+        if (!valid) {
+          this.$message({ type: 'error', message: '请填写完整的卖出信息' })
+          return false
+        }
+        
+        // 检查是否持有该股票
+        const position = this.positions.find(p => p.symbol === this.sellForm.stockCode)
+        if (!position) {
+          this.$message({ type: 'error', message: '您未持有该股票' })
+          return false
+        }
+        
+        // 检查卖出数量是否超过持有数量
+        if (this.sellForm.quantity > position.quantity) {
+          this.$message({ type: 'error', message: '卖出数量不能超过持有数量' })
+          return false
+        }
+        
+        // 显示确认对话框
+        this.$confirm(`确定要卖出 ${this.sellForm.quantity} 股 ${this.sellForm.stockName} (${this.sellForm.stockCode}) 吗？价格: ${this.sellForm.price}`, '确认卖出', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        // 创建卖出交易记录
+        const now = new Date().toISOString()
+        const tradeRecord = {
+          timestamp: now,
+          symbol: this.sellForm.stockCode,
+          name: this.sellForm.stockName,
+          side: 'sell',
+          quantity: this.sellForm.quantity,
+          price: this.sellForm.price,
+          amount: this.sellForm.quantity * this.sellForm.price,
+          fee: (this.sellForm.quantity * this.sellForm.price) * 0.001, // 模拟手续费
+          status: 'filled'
+        }
+
+        // 更新交易历史
+        this.tradeHistory.unshift(tradeRecord)
+
+        // 更新持仓
+        const index = this.positions.findIndex(p => p.symbol === this.sellForm.stockCode)
+        if (index !== -1) {
+          if (this.sellForm.quantity === this.positions[index].quantity) {
+            // 全部卖出，移除持仓
+            this.positions.splice(index, 1)
+          } else {
+            // 部分卖出，更新持仓数量
+            this.positions[index].quantity -= this.sellForm.quantity
+            this.positions[index].cost_basis = (this.positions[index].cost_basis * this.positions[index].quantity) / this.positions[index].quantity
+            this.positions[index].profit = this.positions[index].quantity * (this.positions[index].current_price - this.positions[index].cost_basis)
+            this.positions[index].profit_rate = (this.positions[index].current_price - this.positions[index].cost_basis) / this.positions[index].cost_basis
+          }
+        }
+
+        // 更新账户资金（现金增加）
+        this.accountBalance += tradeRecord.amount - tradeRecord.fee
+        this.availableFunds += tradeRecord.amount - tradeRecord.fee
+        
+        // 重置表单
+        form.resetFields()
+
+        // 重新计算统计数据
+        this.calculatePositionStats()
+        this.calculateTradeStats()
+        this.calculateCumulativeReturn()
+
+        // 模拟生成风险预警（如果触发阈值）
+        this.checkRiskWarnings()
+
+        this.$message({ type: 'success', message: '卖出成功' })
+      }).catch(() => {
+        this.$message({ type: 'info', message: '已取消卖出操作' })
+      })
+      })
+    },
+
+    // 买入股票
+    buyStock(formName) {
+        // 验证买入表单
+        const form = this.$refs[formName]
+        if (!form) {
+          this.$message({ type: 'error', message: '表单引用不存在' })
+          return
+        }
+        
+        form.validate((valid) => {
+          if (!valid) {
+            this.$message({ type: 'error', message: '请填写完整的买入信息' })
+            return false
+          }
+          
+          // 验证资金是否充足
+          const totalAmount = this.buyForm.quantity * this.buyForm.price
+          const fee = totalAmount * 0.001
+          if (totalAmount + fee > this.availableFunds) {
+            this.$message({ type: 'error', message: '可用资金不足' })
+            return false
+          }
+          
+          // 显示确认对话框
+          this.$confirm(`确定要买入 ${this.buyForm.quantity} 股 ${this.buyForm.stockName} (${this.buyForm.stockCode}) 吗？价格: ${this.buyForm.price}`, '确认买入', {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'success'
+          }).then(() => {
+            // 创建买入交易记录
+            const now = new Date().toISOString()
+            const tradeRecord = {
+              timestamp: now,
+              symbol: this.buyForm.symbol,
+              name: this.buyForm.name || this.buyForm.symbol,
+              side: 'buy',
+              quantity: this.buyForm.quantity,
+              price: this.buyForm.price,
+              amount: totalAmount,
+              fee: fee,
+              status: 'filled'
+            }
+            
+            // 更新交易历史
+            this.tradeHistory.unshift(tradeRecord)
+            
+            // 添加新持仓
+            this.positions.push({
+              symbol: this.buyForm.symbol,
+              name: this.buyForm.name || this.buyForm.symbol,
+              quantity: this.buyForm.quantity,
+              avg_price: this.buyForm.price,
+              current_price: this.buyForm.price, // 假设买入后价格不变
+              market_value: totalAmount,
+              profit: 0,
+              profit_rate: 0
+            })
+            
+            // 更新账户资金（现金减少）
+            this.accountBalance -= totalAmount + fee
+            this.availableFunds -= totalAmount + fee
+            
+            // 重新计算统计数据
+            this.calculatePositionStats()
+            this.calculateTradeStats()
+            this.calculateCumulativeReturn()
+            
+            // 模拟生成风险预警（如果触发阈值）
+            this.checkRiskWarnings()
+            
+            // 清空买入表单
+            form.resetFields()
+            
+            this.$message({ type: 'success', message: '买入成功' })
+          }).catch(() => {
+            this.$message({ type: 'info', message: '已取消买入操作' })
+          })
+          
+          return true
+        })
+      },
+
+    // 检查风险预警
+    checkRiskWarnings() {
+      // 计算当前持仓比例
+      const totalEquity = this.accountBalance + this.totalPositionValue
+      const positionRatio = totalEquity > 0 ? (this.totalPositionValue / totalEquity) * 100 : 0
+      
+      // 检查单只股票持仓比例
+      this.positions.forEach(position => {
+        const stockRatio = this.totalPositionValue > 0 ? (position.market_value / this.totalPositionValue) * 100 : 0
+        
+        // 如果单只股票持仓比例超过40%，生成风险预警
+        if (stockRatio > 40) {
+          const now = new Date()
+          const warning = {
+            id: `RW${now.getTime()}`,
+            timestamp: now.toLocaleString('zh-CN'),
+            type: 'risk',
+            level: '高风险',
+            message: `股票${position.symbol}持仓比例超过40%`,
+            relatedAsset: position.symbol,
+            data: {
+              symbol: position.symbol,
+              name: position.name,
+              positionRatio: stockRatio.toFixed(2),
+              threshold: 40
+            },
+            status: 'unhandled'
+          }
+          
+          // 添加新预警（避免重复）
+          if (!this.riskWarnings.some(w => w.relatedAsset === position.symbol && w.status === 'unhandled')) {
+            this.riskWarnings.unshift(warning)
+            this.activeWarnings++
+          }
+        }
+      })
+      
+      // 检查总持仓比例
+      if (positionRatio > 90) {
+        const now = new Date()
+        const warning = {
+          id: `RW${now.getTime()}`,
+          timestamp: now.toLocaleString('zh-CN'),
+          type: 'risk',
+          level: '高风险',
+          message: `总持仓比例超过90%`,
+          data: {
+            positionRatio: positionRatio.toFixed(2),
+            threshold: 90
+          },
+          status: 'unhandled'
+        }
+        
+        // 添加新预警（避免重复）
+        if (!this.riskWarnings.some(w => w.type === 'risk' && w.message.includes('总持仓比例') && w.status === 'unhandled')) {
+          this.riskWarnings.unshift(warning)
+          this.activeWarnings++
+        }
+      }
     }
   }
 }
@@ -1718,6 +2041,14 @@ export default {
 
 .sharpe-range {
   color: #909399;
+}
+
+/* 买入表单样式 */
+.buy-section {
+  margin-bottom: 30px;
+  padding: 20px;
+  background-color: #fafafa;
+  border-radius: 4px;
 }
 
 /* 动画效果 */
