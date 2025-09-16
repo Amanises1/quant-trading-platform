@@ -1,5 +1,3 @@
-# 交易监控模块
-
 import pandas as pd
 import numpy as np
 import logging
@@ -7,6 +5,7 @@ from typing import Dict, List, Union, Optional, Callable
 from datetime import datetime, timedelta
 import threading
 import time
+from .database_connection import db_conn
 
 class TradeMonitor:
     """
@@ -34,13 +33,6 @@ class TradeMonitor:
         self.is_monitoring = False
         self.monitor_thread = None
         
-        # 监控数据
-        self.orders = []
-        self.positions = {}
-        self.trade_history = []
-        self.alerts = []
-        self.last_update_time = None
-        
         # 账户信息
         self.account_info = {
             'initial_equity': 0.0,
@@ -51,15 +43,14 @@ class TradeMonitor:
             'unrealized_pnl': 0.0,
             'realized_pnl': 0.0
         }
+        
+        # 从数据库初始化账户信息
+        self._update_account_info()
     
-    def start_monitoring(self, trade_data_source: Callable, account_data_source: Callable) -> bool:
+    def start_monitoring(self) -> bool:
         """
         启动交易监控
         
-        参数:
-            trade_data_source: 交易数据源函数，用于获取订单和仓位信息
-            account_data_source: 账户数据源函数，用于获取账户信息
-            
         返回:
             是否成功启动监控
         """
@@ -68,13 +59,18 @@ class TradeMonitor:
             return False
         
         self.is_monitoring = True
-        self.trade_data_source = trade_data_source
-        self.account_data_source = account_data_source
         
         # 初始化账户信息
         self._update_account_info()
-        self.account_info['initial_equity'] = self.account_info['current_equity']
-        self.account_info['max_equity'] = self.account_info['current_equity']
+        if self.account_info['current_equity'] > 0:
+            self.account_info['initial_equity'] = self.account_info['current_equity']
+            self.account_info['max_equity'] = self.account_info['current_equity']
+        else:
+            # 如果数据库中没有账户数据，设置默认值
+            self.account_info['initial_equity'] = 1000000.0
+            self.account_info['current_equity'] = 1000000.0
+            self.account_info['max_equity'] = 1000000.0
+            self.account_info['cash_balance'] = 1000000.0
         
         # 启动监控线程
         self.monitor_thread = threading.Thread(target=self._monitoring_loop)
@@ -120,8 +116,8 @@ class TradeMonitor:
                 # 分析交易数据
                 self._analyze_trade_data()
                 
-                # 更新最后更新时间
-                self.last_update_time = datetime.now()
+                # 记录监控日志到数据库
+                self._log_monitoring_summary()
                 
                 # 等待下一次监控
                 time.sleep(self.config['monitoring_interval'])
@@ -132,70 +128,41 @@ class TradeMonitor:
     
     def _update_account_info(self) -> None:
         """
-        更新账户信息
+        从数据库更新账户信息
         """
         try:
-            # 调用账户数据源函数获取最新账户信息
-            account_data = self.account_data_source()
+            # 从数据库获取最新账户信息
+            query = "SELECT * FROM accounts ORDER BY updated_at DESC LIMIT 1"
+            result = db_conn.execute_query(query)
             
-            if account_data is None or not isinstance(account_data, dict):
-                self.logger.warning("获取账户信息失败")
-                return
-            
-            # 更新账户信息
-            self.account_info['current_equity'] = account_data.get('equity', self.account_info['current_equity'])
-            self.account_info['cash_balance'] = account_data.get('cash', self.account_info['cash_balance'])
-            self.account_info['margin_used'] = account_data.get('margin', self.account_info['margin_used'])
-            self.account_info['unrealized_pnl'] = account_data.get('unrealized_pnl', self.account_info['unrealized_pnl'])
-            self.account_info['realized_pnl'] = account_data.get('realized_pnl', self.account_info['realized_pnl'])
-            
-            # 更新最大权益
-            if self.account_info['current_equity'] > self.account_info['max_equity']:
-                self.account_info['max_equity'] = self.account_info['current_equity']
-            
+            if result and len(result) > 0:
+                account_data = result[0]
+                self.account_info['current_equity'] = account_data['equity']
+                self.account_info['cash_balance'] = account_data['cash_balance']
+                self.account_info['margin_used'] = account_data['margin_used']
+                self.account_info['unrealized_pnl'] = account_data['unrealized_pnl']
+                self.account_info['realized_pnl'] = account_data['realized_pnl']
+                
+                # 如果是初始运行，设置初始权益
+                if self.account_info['initial_equity'] == 0:
+                    self.account_info['initial_equity'] = account_data['equity']
+                    self.account_info['max_equity'] = account_data['equity']
+                
+                # 更新最大权益
+                if self.account_info['current_equity'] > self.account_info['max_equity']:
+                    self.account_info['max_equity'] = self.account_info['current_equity']
+            else:
+                self.logger.warning("数据库中未找到账户信息")
+                
         except Exception as e:
             self.logger.error(f"更新账户信息出错: {e}")
     
     def _update_trade_data(self) -> None:
         """
-        更新交易数据
+        从数据库更新交易数据
         """
-        try:
-            # 调用交易数据源函数获取最新订单和仓位信息
-            trade_data = self.trade_data_source()
-            
-            if trade_data is None or not isinstance(trade_data, dict):
-                self.logger.warning("获取交易数据失败")
-                return
-            
-            # 更新订单信息
-            new_orders = trade_data.get('orders', [])
-            if new_orders:
-                # 合并新订单，避免重复
-                existing_order_ids = {order['order_id'] for order in self.orders}
-                for order in new_orders:
-                    if order.get('order_id') not in existing_order_ids:
-                        self.orders.append(order)
-                        # 如果是已完成的订单，添加到交易历史
-                        if order.get('status') in ['filled', 'partially_filled', 'canceled', 'rejected']:
-                            self.trade_history.append({
-                                'timestamp': order.get('update_time', datetime.now()),
-                                'order_id': order.get('order_id'),
-                                'symbol': order.get('symbol'),
-                                'side': order.get('side'),
-                                'quantity': order.get('filled_quantity', 0),
-                                'price': order.get('average_price', 0),
-                                'status': order.get('status'),
-                                'order_type': order.get('order_type')
-                            })
-            
-            # 更新仓位信息
-            new_positions = trade_data.get('positions', {})
-            if new_positions:
-                self.positions = new_positions
-            
-        except Exception as e:
-            self.logger.error(f"更新交易数据出错: {e}")
+        # 不需要在这个类中维护orders和positions列表，因为现在是直接从数据库获取
+        pass
     
     def _analyze_trade_data(self) -> None:
         """
@@ -226,11 +193,12 @@ class TradeMonitor:
         
         # 检查是否超过回撤阈值
         if drawdown > self.config['max_drawdown_threshold']:
+            severity = 'high' if drawdown > 1.5 * self.config['max_drawdown_threshold'] else 'medium'
             alert = {
-                'timestamp': datetime.now(),
+                'timestamp': datetime.now().timestamp(),
                 'type': 'drawdown_alert',
                 'message': f"账户回撤超过阈值: {drawdown:.2%}",
-                'severity': 'high' if drawdown > 1.5 * self.config['max_drawdown_threshold'] else 'medium',
+                'severity': severity,
                 'data': {
                     'current_equity': self.account_info['current_equity'],
                     'max_equity': self.account_info['max_equity'],
@@ -238,29 +206,39 @@ class TradeMonitor:
                     'threshold': self.config['max_drawdown_threshold']
                 }
             }
-            self.alerts.append(alert)
+            
+            # 保存警报到数据库
+            self._save_alert_to_db(alert)
             self.logger.warning(f"{alert['message']} (严重程度: {alert['severity']})")
     
     def _check_position_size(self) -> None:
         """
         检查仓位大小
         """
-        if not self.positions or self.account_info['current_equity'] <= 0:
+        if self.account_info['current_equity'] <= 0:
             return
         
-        for symbol, position in self.positions.items():
-            # 计算仓位比例
-            position_value = position.get('market_value', 0)
+        # 从数据库获取当前仓位
+        query = "SELECT * FROM positions"
+        positions = db_conn.execute_query(query)
+        
+        if not positions:
+            return
+        
+        for position in positions:
+            symbol = position['symbol']
+            position_value = position['market_value']
             position_ratio = position_value / self.account_info['current_equity']
             
             # 检查是否超过最大仓位比例
             if position_ratio > self.config['max_position_size']:
+                severity = 'high' if position_ratio > 1.5 * self.config['max_position_size'] else 'medium'
                 alert = {
-                    'timestamp': datetime.now(),
+                    'timestamp': datetime.now().timestamp(),
                     'type': 'position_size_alert',
                     'symbol': symbol,
                     'message': f"{symbol}仓位比例超过阈值: {position_ratio:.2%}",
-                    'severity': 'high' if position_ratio > 1.5 * self.config['max_position_size'] else 'medium',
+                    'severity': severity,
                     'data': {
                         'position_value': position_value,
                         'equity': self.account_info['current_equity'],
@@ -268,17 +246,23 @@ class TradeMonitor:
                         'threshold': self.config['max_position_size']
                     }
                 }
-                self.alerts.append(alert)
+                
+                # 保存警报到数据库
+                self._save_alert_to_db(alert)
                 self.logger.warning(f"{alert['message']} (严重程度: {alert['severity']})")
     
     def _check_order_execution(self) -> None:
         """
         检查订单执行情况
         """
-        # 检查最近的订单
-        recent_orders = [order for order in self.orders if order.get('status') == 'filled' and 
-                        order.get('update_time') and 
-                        (datetime.now() - order['update_time']).total_seconds() < 3600]  # 最近1小时内的订单
+        # 从数据库获取最近的已完成订单（最近1小时内）
+        one_hour_ago = datetime.now() - timedelta(hours=1)
+        query = """
+        SELECT * FROM orders 
+        WHERE status = 'filled' AND updated_at >= %s
+        ORDER BY updated_at DESC
+        """
+        recent_orders = db_conn.execute_query(query, (one_hour_ago,))
         
         for order in recent_orders:
             # 检查滑点
@@ -298,7 +282,7 @@ class TradeMonitor:
                 # 检查是否超过滑点阈值
                 if slippage_ratio > self.config['slippage_threshold']:
                     alert = {
-                        'timestamp': datetime.now(),
+                        'timestamp': datetime.now().timestamp(),
                         'type': 'slippage_alert',
                         'order_id': order.get('order_id'),
                         'symbol': order.get('symbol'),
@@ -312,14 +296,64 @@ class TradeMonitor:
                             'threshold': self.config['slippage_threshold']
                         }
                     }
-                    self.alerts.append(alert)
+                    
+                    # 保存警报到数据库
+                    self._save_alert_to_db(alert)
                     self.logger.warning(f"{alert['message']} (严重程度: {alert['severity']})")
+    
+    def _save_alert_to_db(self, alert: Dict) -> None:
+        """
+        将警报保存到数据库
+        """
+        try:
+            query = """
+            INSERT INTO alerts (timestamp, type, symbol, message, severity, data)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            
+            params = (
+                alert['timestamp'],
+                alert['type'],
+                alert.get('symbol'),
+                alert['message'],
+                alert['severity'],
+                str(alert['data'])
+            )
+            
+            db_conn.execute_query(query, params)
+        except Exception as e:
+            self.logger.error(f"保存警报到数据库失败: {e}")
+    
+    def _log_monitoring_summary(self) -> None:
+        """
+        将监控摘要记录到数据库
+        """
+        try:
+            # 获取当前交易概览
+            summary = self.get_trade_summary()
+            
+            query = """
+            INSERT INTO monitoring_logs (timestamp, account_info, positions_count, orders_count, alerts_count)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+            
+            params = (
+                summary['timestamp'].timestamp(),
+                str(summary['account']),
+                summary['positions_count'],
+                summary['orders_count'],
+                summary['alerts_count']
+            )
+            
+            db_conn.execute_query(query, params)
+        except Exception as e:
+            self.logger.error(f"记录监控日志到数据库失败: {e}")
     
     def get_alerts(self, start_time: Optional[datetime] = None, 
                   alert_types: Optional[List[str]] = None, 
                   min_severity: Optional[str] = None) -> List[Dict]:
         """
-        获取警报列表
+        从数据库获取警报列表
         
         参数:
             start_time: 开始时间，只返回该时间之后的警报
@@ -329,23 +363,48 @@ class TradeMonitor:
         返回:
             警报列表
         """
-        filtered_alerts = self.alerts
+        query = "SELECT * FROM alerts WHERE 1=1"
+        params = []
         
         # 按时间过滤
         if start_time:
-            filtered_alerts = [alert for alert in filtered_alerts if alert['timestamp'] >= start_time]
+            query += " AND timestamp >= %s"
+            params.append(start_time.timestamp())
         
         # 按类型过滤
         if alert_types:
-            filtered_alerts = [alert for alert in filtered_alerts if alert['type'] in alert_types]
+            types_placeholder = ','.join(['%s'] * len(alert_types))
+            query += f" AND type IN ({types_placeholder})"
+            params.extend(alert_types)
         
         # 按严重程度过滤
         if min_severity:
             severity_levels = {'low': 0, 'medium': 1, 'high': 2}
             min_level = severity_levels.get(min_severity.lower(), 0)
-            filtered_alerts = [alert for alert in filtered_alerts if severity_levels.get(alert['severity'].lower(), 0) >= min_level]
+            
+            # 将严重程度转换为可查询的列表
+            query_severities = [k for k, v in severity_levels.items() if v >= min_level]
+            severities_placeholder = ','.join(['%s'] * len(query_severities))
+            query += f" AND severity IN ({severities_placeholder})"
+            params.extend(query_severities)
         
-        return filtered_alerts
+        # 按时间排序
+        query += " ORDER BY timestamp DESC"
+        
+        results = db_conn.execute_query(query, tuple(params))
+        
+        # 处理数据格式
+        if results:
+            for result in results:
+                # 删除不需要返回的字段
+                for field in ['created_at', 'updated_at']:
+                    if field in result:
+                        del result[field]
+                
+                # 将时间戳转换为datetime对象
+                result['timestamp'] = datetime.fromtimestamp(result['timestamp'])
+        
+        return results or []
     
     def get_trade_summary(self) -> Dict:
         """
@@ -354,6 +413,38 @@ class TradeMonitor:
         返回:
             交易概览字典
         """
+        # 从数据库获取当前仓位和订单数量
+        positions_count = len(db_conn.execute_query("SELECT * FROM positions"))
+        orders_count = len(db_conn.execute_query("SELECT * FROM orders WHERE status != 'filled'"))
+        alerts_count = len(db_conn.execute_query("SELECT * FROM alerts WHERE created_at >= NOW() - INTERVAL '24 HOURS'"))
+        
+        # 从数据库获取仓位详情
+        positions_query = """
+        SELECT symbol, quantity, entry_price, market_price, market_value, unrealized_pnl, unrealized_pnl_pct 
+        FROM positions
+        """
+        positions_data = db_conn.execute_query(positions_query)
+        
+        positions = {}
+        for pos in positions_data:
+            symbol = pos['symbol']
+            positions[symbol] = {
+                'quantity': pos.get('quantity', 0),
+                'entry_price': pos.get('entry_price', 0),
+                'market_price': pos.get('market_price', 0),
+                'market_value': pos.get('market_value', 0),
+                'unrealized_pnl': pos.get('unrealized_pnl', 0),
+                'unrealized_pnl_pct': pos.get('unrealized_pnl_pct', 0)
+            }
+        
+        # 计算收益率和回撤
+        return_pct = 0
+        drawdown = 0
+        if self.account_info['initial_equity'] > 0:
+            return_pct = (self.account_info['current_equity'] / self.account_info['initial_equity'] - 1)
+        if self.account_info['max_equity'] > 0:
+            drawdown = 1 - self.account_info['current_equity'] / self.account_info['max_equity']
+        
         summary = {
             'timestamp': datetime.now(),
             'account': {
@@ -362,25 +453,17 @@ class TradeMonitor:
                 'cash_balance': self.account_info['cash_balance'],
                 'unrealized_pnl': self.account_info['unrealized_pnl'],
                 'realized_pnl': self.account_info['realized_pnl'],
-                'return_pct': (self.account_info['current_equity'] / self.account_info['initial_equity'] - 1) if self.account_info['initial_equity'] > 0 else 0,
-                'drawdown': (1 - self.account_info['current_equity'] / self.account_info['max_equity']) if self.account_info['max_equity'] > 0 else 0
+                'return_pct': return_pct,
+                'drawdown': drawdown
             },
-            'positions_count': len(self.positions),
-            'orders_count': len(self.orders),
-            'alerts_count': len(self.alerts),
-            'last_update': self.last_update_time,
-            'positions': {}
+            'positions_count': positions_count,
+            'orders_count': orders_count,
+            'alerts_count': alerts_count,
+            'last_update': datetime.now(),
+            'positions': positions
         }
         
-        # 添加各仓位的摘要数据
-        for symbol, position in self.positions.items():
-            summary['positions'][symbol] = {
-                'quantity': position.get('quantity', 0),
-                'entry_price': position.get('entry_price', 0),
-                'market_price': position.get('market_price', 0),
-                'market_value': position.get('market_value', 0),
-                'unrealized_pnl': position.get('unrealized_pnl', 0),
-                'unrealized_pnl_pct': position.get('unrealized_pnl_pct', 0)
-            }
-        
         return summary
+
+# 创建全局交易监控器实例
+trade_monitor = TradeMonitor()

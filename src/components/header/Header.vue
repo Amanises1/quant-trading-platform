@@ -43,7 +43,10 @@ export default {
   },
   methods: {
     viewAllNotifications() {
-      this.$router.push('/notifications');
+      // 避免重复导航到当前页面
+      if (this.$route.path !== '/notifications') {
+        this.$router.push('/notifications');
+      }
     },
     handleCommand(command) {
       if (command === 'logout') {

@@ -12,12 +12,7 @@
     <div class="realtime-content">
       <div class="toolbar">
         <el-select v-model="selectedStock" placeholder="选择股票" class="stock-select">
-          <el-option label="上证指数 (000001)" value="000001"></el-option>
-          <el-option label="深证成指 (399001)" value="399001"></el-option>
-          <el-option label="创业板指 (399006)" value="399006"></el-option>
-          <el-option label="贵州茅台 (600519)" value="600519"></el-option>
-          <el-option label="中国平安 (601318)" value="601318"></el-option>
-          <el-option label="宁德时代 (300750)" value="300750"></el-option>
+          <el-option v-for="option in stockOptions" :key="option.value" :label="option.label" :value="option.value"></el-option>
         </el-select>
         <el-date-picker
           v-model="dateRange"
@@ -28,22 +23,10 @@
           class="date-picker"
         ></el-date-picker>
         <el-select v-model="selectedChartType" placeholder="选择图表类型" class="chart-type-select">
-          <el-option label="价格走势图" value="price_chart"></el-option>
-          <el-option label="K线图(基础图表)" value="candlestick_chart"></el-option>
-          <el-option label="特征相关性矩阵" value="correlation_matrix"></el-option>
-          <el-option label="因子收益率贡献度" value="factor_contribution"></el-option>
-          <el-option label="资金流向桑基图" value="sankey_diagram"></el-option>
-          <el-option label="市场情绪变化热力图" value="sentiment_heatmap"></el-option>
-          <el-option label="投资组合表现" value="portfolio_performance"></el-option>
-          <el-option label="收益分布" value="returns_distribution"></el-option>
-          <el-option label="月度收益热图" value="monthly_returns_heatmap"></el-option>
-          <el-option label="交易分析" value="trade_analysis"></el-option>
+          <el-option v-for="option in chartTypeOptions" :key="option.value" :label="option.label" :value="option.value"></el-option>
         </el-select>
         <el-button type="primary" @click="generateChart">生成图表</el-button>
         <el-button @click="downloadChart">下载图表</el-button>
-        <el-button @click="toggleRealtimeUpdate" :type="isRealtimeUpdating ? 'warning' : 'success'">
-          {{ isRealtimeUpdating ? '停止实时更新' : '开启实时更新' }}
-        </el-button>
       </div>
       
       <div class="chart-content">
@@ -121,59 +104,130 @@
 </template>
 
 <script>
-import axios from 'axios';
+import { axiosInstance } from '@/utils/axios-config';
+import html2canvas from 'html2canvas';
 
 export default {
   name: 'Visualization',
   data() {
-    return {
-      // 基础状态
-      activeTab: 'realtime',
-      selectedStock: '000001',
-      selectedChartType: 'price_chart',
-      dateRange: [new Date('2023-01-01'), new Date('2023-12-31')],
-      chartUrl: '',
-      chartHtml: '',
-      statsData: null,
-      isRealtimeUpdating: false,
-      realtimeUpdateInterval: null,
-      
-      // 图表配置
-      chartConfig: {
-        title: '股票数据分析',
-        showGrid: true,
-        showWatermark: true,
-        theme: 'light',
-        showVolume: true,
-        maPeriod: 30,
-        showBenchmark: true,
-        showDrawdown: true,
-        showSignals: true
-      }
-    };
-  },
-
+      return {
+        // 基础状态
+        activeTab: 'realtime',
+        selectedStock: '',
+        selectedChartType: '',
+        dateRange: [new Date('2023-01-01'), new Date('2023-12-31')],
+        chartUrl: '',
+        chartHtml: '',
+        statsData: null,
+        
+        // 动态选项数据
+        stockOptions: [],
+        chartTypeOptions: [],
+        
+        // 图表配置
+        chartConfig: {
+          title: '股票数据分析',
+          showGrid: true,
+          showWatermark: true,
+          theme: 'light',
+          showVolume: true,
+          maPeriod: 30,
+          showBenchmark: true,
+          showDrawdown: true,
+          showSignals: true
+        }
+      };
+    },
+    
   mounted() {
     // 组件挂载后初始化
     this.initialize();
+    
+    // 初始化时获取股票列表和图表类型
+    this.fetchStockOptions();
+    this.fetchChartTypeOptions();
   },
   beforeDestroy() {
-    // 清理定时器
-    if (this.realtimeUpdateInterval) {
-      clearInterval(this.realtimeUpdateInterval);
-    }
+    // 清理资源
   },
   methods: {
-    // 初始化函数
-    initialize() {
-      // 实时数据可视化模块初始化
-    },
-    
-    // 生成图表
-    async generateChart() {
+      // 初始化函数
+      initialize() {
+        // 实时数据可视化模块初始化
+      },
+      
+      // 获取股票列表
+      async fetchStockOptions() {
+        try {
+          // 首先检查本地存储中是否已有股票列表数据
+          const storedStocks = localStorage.getItem('visualization_stock_options');
+          if (storedStocks) {
+            console.log('从本地存储获取股票列表...');
+            this.stockOptions = JSON.parse(storedStocks);
+            // 默认选择第一个股票
+            if (!this.selectedStock && this.stockOptions.length > 0) {
+              this.selectedStock = this.stockOptions[0].value;
+            }
+            console.log('成功从本地存储加载股票列表，数量:', this.stockOptions.length);
+            return;
+          }
+          
+          // 如果本地存储中没有数据，则从API获取
+          console.log('开始从API获取股票列表...');
+          // 添加超时配置
+          const config = { timeout: 60000 }; // 增加到60秒超时
+          const response = await axiosInstance.get('/api/visualization/stocks', config);
+          console.log('获取股票列表响应:', response);
+          
+          if (response && response.stocks && response.stocks.length > 0) {
+            this.stockOptions = response.stocks;
+            // 将数据保存到本地存储
+            localStorage.setItem('visualization_stock_options', JSON.stringify(this.stockOptions));
+            // 默认选择第一个股票
+            if (!this.selectedStock && this.stockOptions.length > 0) {
+              this.selectedStock = this.stockOptions[0].value;
+            }
+            console.log('成功加载股票列表并保存到本地，数量:', this.stockOptions.length);
+          } else {
+            console.warn('股票列表为空或响应格式不正确:', response);
+            this.$message.warning('未获取到股票数据');
+          }
+        } catch (error) {
+          console.error('获取股票列表失败:', error);
+          this.$message.error('获取股票列表失败，请稍后再试');
+        }
+      },
+      
+      // 获取图表类型
+      async fetchChartTypeOptions() {
+        try {
+            console.log('开始获取图表类型...');
+            // 添加超时配置
+            const config = { timeout: 60000 }; // 增加到60秒超时
+            const response = await axiosInstance.get('/api/visualization/chart-types', config);
+            console.log('获取图表类型响应:', response);
+          if (response && response.chart_types && response.chart_types.length > 0) {
+              this.chartTypeOptions = response.chart_types;
+              // 默认选择第一个图表类型
+              if (!this.selectedChartType && this.chartTypeOptions.length > 0) {
+                this.selectedChartType = this.chartTypeOptions[0].value;
+              }
+              console.log('成功加载图表类型，数量:', this.chartTypeOptions.length);
+            } else {
+              console.warn('图表类型为空或响应格式不正确:', response);
+              this.$message.warning('未获取到图表类型数据');
+            }
+        } catch (error) {
+          console.error('获取图表类型失败:', error);
+          this.$message.error('获取图表类型失败，请稍后再试');
+        }
+      },
+      
+      // 生成图表
+      async generateChart() {
       try {
         // 显示加载中状态
-        this.$message.loading('正在生成图表，请稍候...', 0);
+        this.$message({message: '正在生成图表，请稍候...', type: 'info', duration: 0});
         
         // 准备请求参数
         const params = {
@@ -185,26 +239,26 @@ export default {
         };
         
         // 调用后端API生成图表
-        const response = await axios.post('/api/visualization/generate', params);
+        const response = await axiosInstance.post('/api/visualization/generate', params);
         
         // 处理响应数据
-        if (response.data.success) {
+        if (response && response.success) {
           // 根据图表类型处理返回数据
-          if (['candlestick_chart', 'portfolio_performance', 'factor_contribution', 'sankey_diagram', 'sentiment_heatmap'].includes(this.selectedChartType)) {
-            this.chartHtml = response.data.chart_html;
+          if (['candlestick_chart', 'portfolio_performance'].includes(this.selectedChartType)) {
+            this.chartHtml = response.chart_html;
             this.chartUrl = '';
           } else {
-            this.chartUrl = response.data.chart_url;
+            this.chartUrl = response.chart_url;
             this.chartHtml = '';
           }
           
           // 更新统计数据
-          this.statsData = response.data.stats || null;
+          this.statsData = response.stats || null;
           
           this.$message.success('图表生成成功');
         } else {
-          this.$message.error(`图表生成失败: ${response.data.message}`);
-        }
+            this.$message.error(`图表生成失败: ${response && response.message ? response.message : '未知错误'}`);
+          }
       } catch (error) {
         console.error('生成图表时出错:', error);
         this.$message.error('生成图表时出错，请稍后重试');
@@ -217,58 +271,95 @@ export default {
     // 下载图表
     async downloadChart() {
       try {
-        const params = {
-          chart_type: this.selectedChartType,
-          start_date: this.formatDate(this.dateRange[0]),
-          end_date: this.formatDate(this.dateRange[1]),
-          stock_symbol: this.selectedStock,
-          config: this.chartConfig
-        };
+        // 显示加载中状态
+        this.$message({message: '正在准备下载图表，请稍候...', type: 'info', duration: 0});
         
-        // 创建下载链接
-        const url = '/api/visualization/download';
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = url;
-        form.style.display = 'none';
-        
-        // 添加表单数据
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'params';
-        input.value = JSON.stringify(params);
-        form.appendChild(input);
-        
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
+        // 首先检查是否有前端已生成的图表数据
+        if (this.chartHtml) {
+          // 处理HTML类型的图表
+          console.log('使用本地HTML图表数据进行下载...');
+          
+          // 创建一个临时iframe来加载HTML内容
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          document.body.appendChild(iframe);
+          
+          // 将HTML内容加载到iframe
+          iframe.contentDocument.write(this.chartHtml);
+          iframe.contentDocument.close();
+          
+          // 等待iframe内容加载完成后再下载
+          setTimeout(() => {
+            try {
+              // 将HTML转换为图片并下载
+              html2canvas(iframe.contentDocument.body).then(canvas => {
+                // 转换为图片URL
+                const imgUrl = canvas.toDataURL('image/png');
+                
+                // 创建下载链接
+                const link = document.createElement('a');
+                link.href = imgUrl;
+                link.download = `chart_${this.selectedChartType}_${new Date().toISOString().slice(0,10)}.png`;
+                
+                // 触发下载
+                document.body.appendChild(link);
+                link.click();
+                
+                // 清理
+                document.body.removeChild(link);
+                document.body.removeChild(iframe);
+                
+                this.$message.success('图表下载成功');
+              }).catch(err => {
+                console.error('HTML转图片失败:', err);
+                this.$message.error('图表下载失败，请稍后重试');
+                document.body.removeChild(iframe);
+              });
+            } catch (error) {
+              console.error('下载HTML图表时出错:', error);
+              this.$message.error('图表下载失败，请稍后重试');
+              document.body.removeChild(iframe);
+            } finally {
+              // 关闭加载中状态
+              this.$message.closeAll();
+            }
+          }, 1000);
+          
+          return;
+        } else if (this.chartUrl) {
+          // 处理图片类型的图表
+          console.log('使用本地图片URL进行下载...');
+          
+          // 创建下载链接
+          const link = document.createElement('a');
+          link.href = this.chartUrl;
+          link.download = `chart_${this.selectedChartType}_${new Date().toISOString().slice(0,10)}.png`;
+          
+          // 触发下载
+          document.body.appendChild(link);
+          link.click();
+          
+          // 清理
+          document.body.removeChild(link);
+          
+          this.$message.success('图表下载成功');
+        } else {
+          // 没有本地图表数据，提示用户先生成图表
+          this.$message.warning('请先生成图表再进行下载');
+        }
         
       } catch (error) {
         console.error('下载图表时出错:', error);
-        this.$message.error('下载图表时出错，请稍后重试');
+        this.$message.error('图表下载时出错，请稍后重试');
+      } finally {
+        // 关闭加载中状态
+        if (!this.chartHtml) { // HTML图表的清理在setTimeout回调中处理
+          this.$message.closeAll();
+        }
       }
     },
     
-    // 切换实时更新
-    toggleRealtimeUpdate() {
-      if (this.isRealtimeUpdating) {
-        // 停止实时更新
-        clearInterval(this.realtimeUpdateInterval);
-        this.realtimeUpdateInterval = null;
-        this.isRealtimeUpdating = false;
-        this.$message.success('已停止实时更新');
-      } else {
-        // 开启实时更新
-        this.isRealtimeUpdating = true;
-        this.$message.success('已开启实时更新');
-        // 立即更新一次
-        this.generateChart();
-        // 设置定时器，每30秒更新一次
-        this.realtimeUpdateInterval = setInterval(() => {
-          this.generateChart();
-        }, 30000);
-      }
-    },
+
     
     // 格式化日期
     formatDate(date) {

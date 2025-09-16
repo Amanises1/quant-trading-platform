@@ -2,10 +2,10 @@
 import datetime
 import json
 import os
+import logging
 from typing import List, Dict, Any, Optional
-
-# 通知配置文件路径
-NOTIFICATION_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'notification_config.json')
+from .database_connection import db_conn
+from .alert_system import alert_system
 
 # 默认通知配置
 default_notification_config = {
@@ -49,29 +49,92 @@ class NotificationManager:
     """通知管理类，负责管理通知配置和发送通知"""
     
     def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        # 初始化数据库表
+        self._init_database()
         # 初始化配置
         self.config = self._load_config()
         
+    def _init_database(self) -> None:
+        """初始化数据库表结构"""
+        try:
+            # 创建通知配置表
+            create_config_table = """
+            CREATE TABLE IF NOT EXISTS notification_config (
+                id SERIAL PRIMARY KEY,
+                account_id VARCHAR(50) NOT NULL DEFAULT 'default',
+                config_key VARCHAR(100) NOT NULL,
+                config_value JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (account_id, config_key)
+            )
+            """
+            db_conn.execute_query(create_config_table)
+            
+            # 创建通知日志表
+            create_log_table = """
+            CREATE TABLE IF NOT EXISTS notification_log (
+                id SERIAL PRIMARY KEY,
+                account_id VARCHAR(50),
+                type VARCHAR(50) NOT NULL,
+                title VARCHAR(200) NOT NULL,
+                message TEXT NOT NULL,
+                level VARCHAR(20) DEFAULT 'info',
+                channels JSONB NOT NULL,
+                success BOOLEAN NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+            db_conn.execute_query(create_log_table)
+            
+            # 创建索引
+            indexes_sql = [
+                "CREATE INDEX IF NOT EXISTS idx_notification_config_account ON notification_config(account_id)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_log_account ON notification_log(account_id)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_log_type ON notification_log(type)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_log_timestamp ON notification_log(timestamp)"
+            ]
+            
+            for idx in indexes_sql:
+                db_conn.execute_query(idx)
+                
+            self.logger.info("通知系统数据库表初始化完成")
+        except Exception as e:
+            self.logger.error(f"初始化通知系统数据库表失败: {e}")
+    
     def _load_config(self) -> Dict[str, Any]:
-        """加载通知配置
+        """从数据库加载通知配置
         
         Returns:
             通知配置
         """
         try:
-            if os.path.exists(NOTIFICATION_CONFIG_PATH):
-                with open(NOTIFICATION_CONFIG_PATH, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            # 查询默认配置
+            query = """
+            SELECT config_key, config_value 
+            FROM notification_config 
+            WHERE account_id = 'default'
+            """
+            
+            results = db_conn.execute_query(query)
+            
+            if results:
+                # 构建配置字典
+                config = {}
+                for row in results:
+                    config[row['config_key']] = row['config_value']
+                return config
             else:
-                # 如果配置文件不存在，使用默认配置并保存
+                # 如果数据库中没有配置，使用默认配置并保存
                 self._save_config(default_notification_config)
                 return default_notification_config
         except Exception as e:
-            print(f"加载通知配置失败: {e}")
+            self.logger.error(f"从数据库加载通知配置失败: {e}")
             return default_notification_config.copy()
     
     def _save_config(self, config: Dict[str, Any]) -> bool:
-        """保存通知配置
+        """保存通知配置到数据库
         
         Args:
             config: 通知配置
@@ -80,11 +143,24 @@ class NotificationManager:
             保存是否成功
         """
         try:
-            with open(NOTIFICATION_CONFIG_PATH, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
+            # 清空默认配置
+            delete_query = "DELETE FROM notification_config WHERE account_id = 'default'"
+            db_conn.execute_query(delete_query)
+            
+            # 插入新配置
+            insert_query = """
+            INSERT INTO notification_config (account_id, config_key, config_value)
+            VALUES ('default', %s, %s)
+            """
+            
+            for key, value in config.items():
+                params = (key, json.dumps(value, ensure_ascii=False))
+                db_conn.execute_query(insert_query, params)
+                
+            self.logger.info("通知配置已保存到数据库")
             return True
         except Exception as e:
-            print(f"保存通知配置失败: {e}")
+            self.logger.error(f"保存通知配置到数据库失败: {e}")
             return False
     
     def get_notification_config(self) -> Dict[str, Any]:
@@ -107,6 +183,34 @@ class NotificationManager:
         self.config.update(new_config)
         self._save_config(self.config)
         return self.config.copy()
+        
+    def _log_notification(self, notification_data: Dict[str, Any], results: Dict[str, Any], success: bool) -> None:
+        """记录通知日志到数据库
+        
+        Args:
+            notification_data: 通知数据
+            results: 通知发送结果
+            success: 是否成功
+        """
+        try:
+            query = """
+            INSERT INTO notification_log (account_id, type, title, message, level, channels, success)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            params = (
+                notification_data.get('accountId'),
+                notification_data.get('type', 'system'),
+                notification_data.get('title', '系统通知'),
+                notification_data.get('message', ''),
+                notification_data.get('level', 'info'),
+                json.dumps(results),
+                success
+            )
+            
+            db_conn.execute_query(query, params)
+        except Exception as e:
+            self.logger.error(f"记录通知日志失败: {e}")
     
     def get_channel_config(self, channel: str) -> Optional[Dict[str, Any]]:
         """获取指定通知渠道的配置
@@ -244,8 +348,12 @@ class NotificationManager:
         # 记录到警报系统
         alert_result = alert_system.add_alert(notification_data)
         
+        # 记录通知日志
+        success = all(r.get('success', False) for r in results.values())
+        self._log_notification(notification_data, results, success)
+        
         return {
-            'success': all(r.get('success', False) for r in results.values()),
+            'success': success,
             'channels': results,
             'alertId': alert_result.get('id')
         }
@@ -284,27 +392,27 @@ class NotificationManager:
                 # 模拟发送邮件
                 channel_config = self.get_channel_config('email')
                 recipients = channel_config.get('recipients', [])
-                print(f"[邮件通知] 发送给: {recipients}, 标题: {notification['title']}, 内容: {notification['message']}")
+                self.logger.info(f"[邮件通知] 发送给: {recipients}, 标题: {notification['title']}")
                 return {'success': True, 'recipients': recipients}
                 
             elif channel == 'sms':
                 # 模拟发送短信
                 channel_config = self.get_channel_config('sms')
                 recipients = channel_config.get('recipients', [])
-                print(f"[短信通知] 发送给: {recipients}, 内容: {notification['message']}")
+                self.logger.info(f"[短信通知] 发送给: {recipients}, 内容: {notification['message']}")
                 return {'success': True, 'recipients': recipients}
                 
             elif channel == 'app':
                 # 应用内通知已通过alert_system处理
-                print(f"[应用内通知] 标题: {notification['title']}, 内容: {notification['message']}")
+                self.logger.info(f"[应用内通知] 标题: {notification['title']}")
                 return {'success': True}
                 
             else:
-                print(f"未知的通知渠道: {channel}")
+                self.logger.warning(f"未知的通知渠道: {channel}")
                 return {'success': False, 'error': '未知的通知渠道'}
                 
         except Exception as e:
-            print(f"通过渠道{channel}发送通知失败: {e}")
+            self.logger.error(f"通过渠道{channel}发送通知失败: {e}")
             return {'success': False, 'error': str(e)}
     
     def send_trade_notification(self, trade_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -370,7 +478,7 @@ class NotificationManager:
         })
 
     def save_notification_config(self, account_id: str = 'default', config: Dict[str, Any] = None) -> Dict[str, Any]:
-        """保存通知配置到文件
+        """保存通知配置到数据库
         
         Args:
             account_id: 账户ID
@@ -379,22 +487,51 @@ class NotificationManager:
         Returns:
             保存后的配置
         """
-        if config:
-            self.config.update(config)
-        
-        # 如果是特定账户的配置，需要为每个账户创建独立配置
-        if account_id != 'default':
-            if 'account_configs' not in self.config:
-                self.config['account_configs'] = {}
-            
-            if account_id not in self.config['account_configs']:
-                self.config['account_configs'][account_id] = {}
-            
-            # 更新特定账户的配置
-            self.config['account_configs'][account_id].update(config or {})
-            
-        self._save_config(self.config)
-        return self.config.copy()
+        if account_id == 'default':
+            # 更新默认配置
+            if config:
+                self.config.update(config)
+            self._save_config(self.config)
+            return self.config.copy()
+        else:
+            # 保存特定账户的配置
+            try:
+                # 先检查是否存在该账户的配置
+                query = """
+                SELECT config_key, config_value 
+                FROM notification_config 
+                WHERE account_id = %s
+                """
+                
+                results = db_conn.execute_query(query, (account_id,))
+                
+                # 构建账户配置
+                account_config = {}
+                for row in results:
+                    account_config[row['config_key']] = row['config_value']
+                
+                # 更新配置
+                if config:
+                    account_config.update(config)
+                
+                # 清空旧配置并保存新配置
+                delete_query = "DELETE FROM notification_config WHERE account_id = %s"
+                db_conn.execute_query(delete_query, (account_id,))
+                
+                insert_query = """
+                INSERT INTO notification_config (account_id, config_key, config_value)
+                VALUES (%s, %s, %s)
+                """
+                
+                for key, value in account_config.items():
+                    params = (account_id, key, json.dumps(value, ensure_ascii=False))
+                    db_conn.execute_query(insert_query, params)
+                
+                self.logger.info(f"已保存账户{account_id}的通知配置")
+                return account_config.copy()
+            except Exception as e:
+                self.logger.error(f"保存账户{account_id}的通知配置失败: {e}")
+                return self.config.copy()
     
     def get_config(self, account_id: str = 'default') -> Dict[str, Any]:
         """获取通知配置
@@ -408,12 +545,59 @@ class NotificationManager:
         if account_id == 'default':
             return self.config.copy()
         
-        # 如果是特定账户的配置，返回该账户的配置（如果存在）
-        if 'account_configs' in self.config and account_id in self.config['account_configs']:
-            return self.config['account_configs'][account_id].copy()
+        # 获取特定账户的配置
+        try:
+            query = """
+            SELECT config_key, config_value 
+            FROM notification_config 
+            WHERE account_id = %s
+            """
+            
+            results = db_conn.execute_query(query, (account_id,))
+            
+            if results:
+                # 构建配置字典
+                config = {}
+                for row in results:
+                    config[row['config_key']] = row['config_value']
+                return config
+            
+            # 如果特定账户配置不存在，返回默认配置的副本
+            self.logger.info(f"账户{account_id}的通知配置不存在，返回默认配置")
+            return self.config.copy()
+        except Exception as e:
+            self.logger.error(f"获取账户{account_id}的通知配置失败: {e}")
+            return self.config.copy()
+            
+    def get_notification_history(self, account_id: str = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """获取通知历史记录
         
-        # 如果特定账户配置不存在，返回默认配置的副本
-        return self.config.copy()
+        Args:
+            account_id: 账户ID，可选
+            limit: 限制返回的记录数
+        
+        Returns:
+            通知历史记录列表
+        """
+        try:
+            query_parts = ["SELECT id, account_id, type, title, message, level, channels, success, timestamp FROM notification_log WHERE 1=1"]
+            params = []
+            
+            if account_id:
+                query_parts.append("AND account_id = %s")
+                params.append(account_id)
+            
+            query_parts.append("ORDER BY timestamp DESC")
+            query_parts.append(f"LIMIT %s")
+            params.append(limit)
+            
+            query = " ".join(query_parts)
+            results = db_conn.execute_query(query, tuple(params))
+            
+            return results or []
+        except Exception as e:
+            self.logger.error(f"获取通知历史记录失败: {e}")
+            return []
 
 # 创建全局通知管理器实例
 notification_manager = NotificationManager()

@@ -249,7 +249,7 @@
 </template>
 
 <script>
-import axios from 'axios';
+import axios from '@/utils/axios-config';
 
 export default {
   name: 'NotificationCenterPage',
@@ -284,7 +284,18 @@ export default {
       if (this.activeFilter === 'unread') {
         filtered = filtered.filter(notification => !notification.read);
       } else if (this.activeFilter !== 'all') {
-        filtered = filtered.filter(notification => notification.type === this.activeFilter);
+        // 添加类型映射，将中文类型名称映射到英文类型
+        const typeMap = {
+          '策略提醒': 'trade',
+          '系统通知': 'system',
+          '风险警告': 'risk',
+          '账户通知': 'balance'
+        };
+        filtered = filtered.filter(notification => {
+          // 先尝试直接匹配，再尝试映射后匹配
+          const mappedType = typeMap[notification.type] || notification.type;
+          return mappedType === this.activeFilter;
+        });
       }
       
       // 按时间降序排序
@@ -304,14 +315,17 @@ export default {
     async loadNotifications() {
       this.loading = true;
       try {
+        // axios-config.js中的响应拦截器已经处理了success字段的判断
+        // 直接返回的是response.data对象，所以不需要再访问response.data
         const response = await axios.get('/api/notifications/get_all');
-        if (response.data.success && response.data.notifications) {
-          this.notifications = response.data.notifications;
+        if (response && response.notifications) {
+          this.notifications = response.notifications;
         }
       } catch (error) {
-        // 使用模拟数据
-        this.notifications = this.generateMockNotifications();
-        this.$message.error('加载通知失败，使用模拟数据');
+        // 不再使用模拟数据，只显示错误提示
+        this.notifications = [];
+        this.$message.error('加载通知失败，请稍后重试');
+        console.error('加载通知失败:', error);
       } finally {
         this.loading = false;
       }
@@ -338,7 +352,7 @@ export default {
     // 标记单个通知为已读
     async markAsRead(id) {
       try {
-        await axios.post(`/api/notifications/read/${id}`);
+        await axios.post('/api/notifications/mark_as_read', { id });
         const notification = this.notifications.find(n => n.id === id);
         if (notification) {
           notification.read = true;
@@ -383,7 +397,13 @@ export default {
     
     // 获取通知类型标签样式
     getNotificationTagType(type) {
+      // 直接映射中文类型到标签样式
       const typeMap = {
+        '风险警告': 'danger',
+        '策略提醒': 'success',
+        '账户通知': 'info',
+        '系统通知': 'warning',
+        // 同时保留对英文类型的支持
         risk: 'danger',
         trade: 'success',
         balance: 'info',
@@ -394,13 +414,21 @@ export default {
     
     // 获取通知类型文本
     getNotificationTypeText(type) {
+      // 对于中文类型名称，直接返回或进行适当简化
+      const simplifiedMap = {
+        '风险警告': '风险',
+        '策略提醒': '交易',
+        '账户通知': '资金',
+        '系统通知': '系统'
+      };
+      // 同时保留对英文类型的支持
       const typeMap = {
         risk: '风险',
         trade: '交易',
         balance: '资金',
         system: '系统'
       };
-      return typeMap[type] || '其他';
+      return simplifiedMap[type] || typeMap[type] || type;
     },
     
     // 格式化通知时间（相对时间）
