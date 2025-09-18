@@ -73,7 +73,7 @@ export default {
             const userInfo = {
               id: '1',
               username: this.loginForm.username,
-              role: 'admin',
+              role: 'user',
               token: 'mock-token-' + Date.now()
             };
             

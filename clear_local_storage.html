@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>清除本地存储 - 量化交易系统</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            margin-top: 50px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        p {
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #40a9ff;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .success {
+            background-color: #f6ffed;
+            border: 1px solid #b7eb8f;
+            color: #52c41a;
+            display: block;
+        }
+
+        .info {
+            background-color: #e6f7ff;
+            border: 1px solid #91d5ff;
+            color: #1890ff;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>清除本地存储</h1>
+        <p>点击下方按钮清除浏览器中的用户登录信息，用于测试注册和登录功能</p>
+        <button id="clearBtn">清除登录信息</button>
+        <div id="statusMsg" class="status"></div>
+
+        <div style="margin-top: 40px;">
+            <h3>当前存储的信息</h3>
+            <div id="currentInfo"
+                style="text-align: left; background: #f5f5f5; padding: 15px; border-radius: 4px; margin-top: 10px; word-break: break-all;">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 显示当前localStorage中的信息
+        function displayCurrentInfo() {
+            const infoElement = document.getElementById('currentInfo');
+            let infoHtml = '';
+
+            if (localStorage.getItem('token')) {
+                infoHtml += '<p><strong>Token:</strong> ' + localStorage.getItem('token') + '</p>';
+            } else {
+                infoHtml += '<p><strong>Token:</strong> 未设置</p>';
+            }
+
+            if (localStorage.getItem('userInfo')) {
+                try {
+                    const userInfo = JSON.parse(localStorage.getItem('userInfo'));
+                    infoHtml += '<p><strong>用户信息:</strong></p>';
+                    infoHtml += '<pre>' + JSON.stringify(userInfo, null, 2) + '</pre>';
+                } catch (e) {
+                    infoHtml += '<p><strong>用户信息:</strong> 格式错误</p>';
+                }
+            } else {
+                infoHtml += '<p><strong>用户信息:</strong> 未设置</p>';
+            }
+
+            infoElement.innerHTML = infoHtml;
+        }
+
+        // 清除localStorage中的登录信息
+        document.getElementById('clearBtn').addEventListener('click', function () {
+            // 清除token和userInfo
+            localStorage.removeItem('token');
+            localStorage.removeItem('userInfo');
+
+            // 也可以清除所有内容，但保留其他可能有用的信息
+            // localStorage.clear();
+
+            // 显示清除成功消息
+            const statusElement = document.getElementById('statusMsg');
+            statusElement.textContent = '登录信息已清除！';
+            statusElement.className = 'status success';
+
+            // 更新显示当前信息
+            displayCurrentInfo();
+
+            // 3秒后隐藏消息
+            setTimeout(function () {
+                statusElement.style.display = 'none';
+            }, 3000);
+        });
+
+        // 页面加载时显示当前信息
+        window.onload = displayCurrentInfo;
+    </script>
+</body>
+
+</html>

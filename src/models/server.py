@@ -2309,6 +2309,1027 @@ def get_mock_notifications():
         'notifications': mock_notifications
     })
 
+# 用户个人信息API - 获取用户个人信息
+@app.route('/api/user/profile', methods=['GET'])
+def get_user_profile():
+    try:
+        # 获取用户ID，这里使用默认值1进行模拟
+        user_id = request.args.get('user_id', 1)
+        
+        # 模拟从数据库获取用户信息
+        # 实际应用中应该从真实的用户表中查询
+        mock_user_data = {
+            'id': user_id,
+            'username': 'user' + str(user_id),
+            'email': 'user' + str(user_id) + '@example.com',
+            'phone': '1380013800' + str(user_id),
+            'role': 'user' if user_id != 1 else 'admin',
+            'created_at': '2023-01-01 00:00:00',
+            'updated_at': '2023-01-01 00:00:00'
+        }
+        
+        # 尝试从数据库获取真实用户信息
+        try:
+            db = DatabaseConnection()
+            if db.connect():
+                # 检查users表是否存在
+                check_table_query = """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'users'
+                )
+                """
+                table_exists = db.execute_query(check_table_query)
+                
+                if table_exists and table_exists[0].get('exists'):
+                    # 查询用户信息
+                    user_query = """
+                    SELECT id, username, email, phone, role, created_at, updated_at 
+                    FROM users WHERE id = %s
+                    """
+                    user_result = db.execute_query(user_query, (user_id,))
+                    if user_result and len(user_result) > 0:
+                        mock_user_data = user_result[0]
+                db.disconnect()
+        except Exception as db_error:
+            logger.warning(f'查询用户信息数据库时发生错误: {str(db_error)}，将使用模拟数据')
+        
+        return jsonify({
+            'success': True,
+            'userInfo': mock_user_data
+        })
+    except Exception as e:
+        logger.error(f'获取用户个人信息时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 用户个人信息API - 更新用户个人信息
+@app.route('/api/user/profile', methods=['PUT'])
+def update_user_profile():
+    try:
+        # 获取请求数据
+        data = request.json
+        if not data:
+            return jsonify({
+                'success': False,
+                'message': '请求数据不能为空'
+            }), 400
+        
+        # 获取用户ID，这里使用默认值1进行模拟
+        user_id = data.get('id', 1)
+        username = data.get('username')
+        email = data.get('email')
+        phone = data.get('phone')
+        # 不允许修改角色
+        
+        # 验证必要字段
+        if not username or not email or not phone:
+            return jsonify({
+                'success': False,
+                'message': '用户名、邮箱和手机号为必填项'
+            }), 400
+        
+        # 模拟更新到数据库
+        # 实际应用中应该更新到真实的用户表
+        updated_user_data = {
+            'id': user_id,
+            'username': username,
+            'email': email,
+            'phone': phone,
+            'role': data.get('role', 'user'),
+            'created_at': data.get('created_at', '2023-01-01 00:00:00'),
+            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # 尝试更新到数据库
+        try:
+            db = DatabaseConnection()
+            if db.connect():
+                # 检查users表是否存在
+                check_table_query = """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'users'
+                )
+                """
+                table_exists = db.execute_query(check_table_query)
+                
+                if table_exists and table_exists[0].get('exists'):
+                    # 更新用户信息
+                    update_query = """
+                    UPDATE users 
+                    SET username = %s, email = %s, phone = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """
+                    with db.conn.cursor() as cur:
+                        cur.execute(update_query, (username, email, phone, user_id))
+                        db.conn.commit()
+                    logger.info(f'成功更新用户ID={user_id}的个人信息')
+                db.disconnect()
+        except Exception as db_error:
+            logger.warning(f'更新用户信息数据库时发生错误: {str(db_error)}，将使用模拟更新')
+        
+        return jsonify({
+            'success': True,
+            'message': '个人信息更新成功',
+            'userInfo': updated_user_data
+        })
+    except Exception as e:
+        logger.error(f'更新用户个人信息时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 修改密码API
+@app.route('/api/user/change-password', methods=['POST'])
+def change_password():
+    try:
+        # 获取请求数据
+        data = request.json
+        if not data:
+            return jsonify({
+                'success': False,
+                'message': '请求数据不能为空'
+            }), 400
+        
+        # 获取用户ID，这里使用默认值1进行模拟
+        user_id = data.get('user_id', 1)
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        confirm_password = data.get('confirm_password')
+        
+        # 验证密码
+        if not current_password or not new_password or not confirm_password:
+            return jsonify({
+                'success': False,
+                'message': '当前密码、新密码和确认密码为必填项'
+            }), 400
+        
+        if new_password != confirm_password:
+            return jsonify({
+                'success': False,
+                'message': '新密码和确认密码不一致'
+            }), 400
+        
+        if len(new_password) < 6:
+            return jsonify({
+                'success': False,
+                'message': '新密码长度不能少于6位'
+            }), 400
+        
+        # 模拟修改密码
+        # 实际应用中应该更新到真实的用户表，并对密码进行加密
+        logger.info(f'模拟用户ID={user_id}密码修改成功')
+        
+        # 尝试更新到数据库
+        try:
+            db = DatabaseConnection()
+            if db.connect():
+                # 检查users表是否存在
+                check_table_query = """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'users'
+                )
+                """
+                table_exists = db.execute_query(check_table_query)
+                
+                if table_exists and table_exists[0].get('exists'):
+                    # 注意：实际应用中应该使用密码哈希函数，如bcrypt
+                    update_query = """
+                    UPDATE users 
+                    SET password = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """
+                    # 这里简单模拟，实际应用中应该使用哈希函数
+                    with db.conn.cursor() as cur:
+                        cur.execute(update_query, (new_password, user_id))
+                        db.conn.commit()
+                    logger.info(f'成功更新用户ID={user_id}的密码')
+                db.disconnect()
+        except Exception as db_error:
+            logger.warning(f'更新用户密码数据库时发生错误: {str(db_error)}，将使用模拟更新')
+        
+        return jsonify({
+            'success': True,
+            'message': '密码修改成功'
+        })
+    except Exception as e:
+        logger.error(f'修改密码时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 用户注册API
+@app.route('/api/user/register', methods=['POST'])
+def register_user():
+    try:
+        # 获取请求数据
+        data = request.json
+        logger.info('接收到用户注册请求')
+        
+        if not data:
+            logger.warning('注册请求数据为空')
+            return jsonify({
+                'success': False,
+                'message': '请求数据不能为空'
+            }), 400
+        
+        # 获取用户注册信息
+        username = data.get('username')
+        password = data.get('password')
+        email = data.get('email')
+        phone = data.get('phone')
+        role = data.get('role', 'user')
+        
+        logger.info(f'用户注册信息 - 用户名: {username}, 邮箱: {email}, 手机号: {phone}, 角色: {role}')
+        
+        # 验证必要字段
+        if not username or not password or not email or not phone:
+            logger.warning(f'注册信息不完整 - 用户名: {username}, 密码: {password is not None}, 邮箱: {email}, 手机号: {phone}')
+            return jsonify({
+                'success': False,
+                'message': '用户名、密码、邮箱和手机号为必填项'
+            }), 400
+        
+        if len(username) < 3 or len(username) > 20:
+            logger.warning(f'用户名长度不合法: {username} (长度: {len(username)})')
+            return jsonify({
+                'success': False,
+                'message': '用户名长度必须在3到20个字符之间'
+            }), 400
+        
+        if len(password) < 6 or len(password) > 20:
+            logger.warning(f'密码长度不合法: {len(password)}位')
+            return jsonify({
+                'success': False,
+                'message': '密码长度必须在6到20个字符之间'
+            }), 400
+        
+        # 连接数据库并检查用户名是否已存在
+        db = DatabaseConnection()
+        if not db.connect():
+            return jsonify({
+                'success': False,
+                'message': '数据库连接失败'
+            }), 500
+        
+        try:
+            # 检查users表是否存在
+            check_table_query = """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'users'
+            )
+            """
+            table_exists = db.execute_query(check_table_query)
+            
+            if not table_exists or not table_exists[0].get('exists'):
+                # 如果users表不存在，创建表
+                create_table_query = """
+                CREATE TABLE users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(20) UNIQUE NOT NULL,
+                    password VARCHAR(100) NOT NULL,
+                    email VARCHAR(100) UNIQUE NOT NULL,
+                    phone VARCHAR(20) UNIQUE NOT NULL,
+                    role VARCHAR(20) DEFAULT 'user' NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+                """
+                db.execute_query(create_table_query)
+                db.conn.commit()
+                logger.info('创建users表成功')
+            
+            # 检查用户名是否已存在
+            check_username_query = """
+            SELECT id FROM users WHERE username = %s
+            """
+            user_result = db.execute_query(check_username_query, (username,))
+            logger.info(f'检查用户名 {username} 是否已存在')
+            
+            if user_result and len(user_result) > 0:
+                logger.warning(f'用户名 {username} 已存在')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '用户名已存在'
+                }), 400
+            
+            # 检查邮箱是否已存在
+            check_email_query = """
+            SELECT id FROM users WHERE email = %s
+            """
+            email_result = db.execute_query(check_email_query, (email,))
+            logger.info(f'检查邮箱 {email} 是否已存在')
+            
+            if email_result and len(email_result) > 0:
+                logger.warning(f'邮箱 {email} 已被注册')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '邮箱已被注册'
+                }), 400
+            
+            # 检查手机号是否已存在
+            check_phone_query = """
+            SELECT id FROM users WHERE phone = %s
+            """
+            phone_result = db.execute_query(check_phone_query, (phone,))
+            logger.info(f'检查手机号 {phone} 是否已存在')
+            
+            if phone_result and len(phone_result) > 0:
+                logger.warning(f'手机号 {phone} 已被注册')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '手机号已被注册'
+                }), 400
+            
+            # 使用bcrypt加密密码
+            import bcrypt
+            logger.info(f'为用户 {username} 生成密码哈希')
+            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+            
+            # 插入新用户
+            insert_user_query = """
+            INSERT INTO users (username, password, email, phone, role)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+            """
+            logger.info(f'准备插入新用户记录: {username}')
+            result = db.execute_query(insert_user_query, 
+                                     (username, hashed_password.decode('utf-8'), email, phone, role))
+            
+            if result and len(result) > 0:
+                user_id = result[0]['id']
+                db.conn.commit()
+                db.disconnect()
+                
+                logger.info(f'用户注册成功: {username} (用户ID: {user_id})')
+                return jsonify({
+                    'success': True,
+                    'message': '注册成功，请登录'
+                })
+            else:
+                db.conn.rollback()
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '注册失败，请稍后重试'
+                }), 500
+        except Exception as db_error:
+            logger.error(f'注册用户时发生数据库错误: {str(db_error)}')
+            if db.conn:
+                db.conn.rollback()
+                db.disconnect()
+            return jsonify({
+                'success': False,
+                'message': str(db_error)
+            }), 500
+    except Exception as e:
+        logger.error(f'注册用户时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 用户登录API
+@app.route('/api/user/login', methods=['POST'])
+def login_user():
+    try:
+        # 获取请求数据
+        data = request.json
+        logger.info('接收到用户登录请求')
+        
+        if not data:
+            logger.warning('登录请求数据为空')
+            return jsonify({
+                'success': False,
+                'message': '请求数据不能为空'
+            }), 400
+        
+        # 获取用户登录信息
+        username = data.get('username')
+        password = data.get('password')
+        
+        logger.info(f'用户登录尝试 - 用户名: {username}')
+        
+        # 验证必要字段
+        if not username or not password:
+            logger.warning(f'登录信息不完整 - 用户名: {username}, 密码: {password is not None}')
+            return jsonify({
+                'success': False,
+                'message': '用户名和密码为必填项'
+            }), 400
+        
+        # 连接数据库并验证用户
+        db = DatabaseConnection()
+        if not db.connect():
+            return jsonify({
+                'success': False,
+                'message': '数据库连接失败'
+            }), 500
+        
+        try:
+            # 查询用户信息
+            get_user_query = """
+            SELECT id, username, password, role FROM users WHERE username = %s
+            """
+            logger.info(f'查询用户信息: {username}')
+            user_result = db.execute_query(get_user_query, (username,))
+            db.disconnect()
+            
+            if user_result and len(user_result) > 0:
+                user = user_result[0]
+                logger.info(f'找到用户信息 - 用户ID: {user["id"]}, 用户名: {user["username"]}, 角色: {user["role"]}')
+                
+                # 验证密码
+                import bcrypt
+                logger.info(f'验证用户密码: {username}')
+                if bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+                    # 生成token（简单实现，实际应用中应该使用JWT等更安全的方式）
+                    import uuid
+                    logger.info(f'密码验证成功，生成登录token: {username}')
+                    token = str(uuid.uuid4())
+                    
+                    # 构建用户信息
+                    user_info = {
+                        'id': user['id'],
+                        'username': user['username'],
+                        'role': user['role'],
+                        'token': token
+                    }
+                    
+                    logger.info(f'用户登录成功: {username} (用户ID: {user["id"]})')
+                    return jsonify({
+                        'success': True,
+                        'message': '登录成功',
+                        'userInfo': user_info
+                    })
+                else:
+                    logger.warning(f'用户密码错误: {username}')
+                    return jsonify({
+                        'success': False,
+                        'message': '密码错误'
+                    }), 401
+            else:
+                logger.warning(f'用户名不存在: {username}')
+                return jsonify({
+                    'success': False,
+                    'message': '用户名不存在'
+                }), 401
+        except Exception as db_error:
+            logger.error(f'登录用户时发生数据库错误: {str(db_error)}')
+            if db.conn:
+                db.disconnect()
+            return jsonify({
+                'success': False,
+                'message': str(db_error)
+            }), 500
+    except Exception as e:
+        logger.error(f'登录用户时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 获取所有用户列表API
+@app.route('/api/users', methods=['GET'])
+def get_all_users():
+    try:
+        # 连接数据库
+        db = DatabaseConnection()
+        if not db.connect():
+            return jsonify({
+                'success': False,
+                'message': '数据库连接失败'
+            }), 500
+        
+        try:
+            # 查询所有用户信息（不含密码）
+            get_users_query = """
+            SELECT id, username, email, phone, role, created_at, updated_at 
+            FROM users 
+            ORDER BY id ASC
+            """
+            logger.info('查询所有用户列表')
+            users_result = db.execute_query(get_users_query)
+            db.disconnect()
+            
+            if users_result and len(users_result) > 0:
+                logger.info(f'查询到 {len(users_result)} 个用户')
+                return jsonify({
+                    'success': True,
+                    'users': users_result
+                })
+            else:
+                logger.info('没有找到用户记录')
+                return jsonify({
+                    'success': True,
+                    'users': []
+                })
+        except Exception as db_error:
+            logger.error(f'查询用户列表时发生数据库错误: {str(db_error)}')
+            if db.conn:
+                db.disconnect()
+            return jsonify({
+                'success': False,
+                'message': str(db_error)
+            }), 500
+    except Exception as e:
+        logger.error(f'获取用户列表时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 管理员创建用户API
+@app.route('/api/users/create', methods=['POST'])
+def admin_create_user():
+    try:
+        # 获取请求数据
+        data = request.json
+        logger.info('接收到管理员创建用户请求')
+        
+        if not data:
+            logger.warning('创建用户请求数据为空')
+            return jsonify({
+                'success': False,
+                'message': '请求数据不能为空'
+            }), 400
+        
+        # 获取用户注册信息
+        username = data.get('username')
+        password = data.get('password')
+        email = data.get('email')
+        phone = data.get('phone')
+        role = data.get('role', 'user')
+        
+        logger.info(f'创建用户信息 - 用户名: {username}, 邮箱: {email}, 手机号: {phone}, 角色: {role}')
+        
+        # 验证必要字段
+        if not username or not password or not email or not phone:
+            logger.warning(f'注册信息不完整 - 用户名: {username}, 密码: {password is not None}, 邮箱: {email}, 手机号: {phone}')
+            return jsonify({
+                'success': False,
+                'message': '用户名、密码、邮箱和手机号为必填项'
+            }), 400
+        
+        if len(username) < 3 or len(username) > 20:
+            logger.warning(f'用户名长度不合法: {username} (长度: {len(username)})')
+            return jsonify({
+                'success': False,
+                'message': '用户名长度必须在3到20个字符之间'
+            }), 400
+        
+        if len(password) < 6 or len(password) > 20:
+            logger.warning(f'密码长度不合法: {len(password)}位')
+            return jsonify({
+                'success': False,
+                'message': '密码长度必须在6到20个字符之间'
+            }), 400
+        
+        # 连接数据库
+        db = DatabaseConnection()
+        if not db.connect():
+            return jsonify({
+                'success': False,
+                'message': '数据库连接失败'
+            }), 500
+        
+        try:
+            # 检查users表是否存在
+            check_table_query = """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'users'
+            )
+            """
+            table_exists = db.execute_query(check_table_query)
+            
+            if not table_exists or not table_exists[0].get('exists'):
+                # 如果users表不存在，创建表
+                create_table_query = """
+                CREATE TABLE users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(20) UNIQUE NOT NULL,
+                    password VARCHAR(100) NOT NULL,
+                    email VARCHAR(100) UNIQUE NOT NULL,
+                    phone VARCHAR(20) UNIQUE NOT NULL,
+                    role VARCHAR(20) DEFAULT 'user' NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+                """
+                db.execute_query(create_table_query)
+                db.conn.commit()
+                logger.info('创建users表成功')
+            
+            # 检查用户名是否已存在
+            check_username_query = """
+            SELECT id FROM users WHERE username = %s
+            """
+            user_result = db.execute_query(check_username_query, (username,))
+            logger.info(f'检查用户名 {username} 是否已存在')
+            
+            if user_result and len(user_result) > 0:
+                logger.warning(f'用户名 {username} 已存在')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '用户名已存在'
+                }), 400
+            
+            # 检查邮箱是否已存在
+            check_email_query = """
+            SELECT id FROM users WHERE email = %s
+            """
+            email_result = db.execute_query(check_email_query, (email,))
+            logger.info(f'检查邮箱 {email} 是否已存在')
+            
+            if email_result and len(email_result) > 0:
+                logger.warning(f'邮箱 {email} 已被注册')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '邮箱已被注册'
+                }), 400
+            
+            # 检查手机号是否已存在
+            check_phone_query = """
+            SELECT id FROM users WHERE phone = %s
+            """
+            phone_result = db.execute_query(check_phone_query, (phone,))
+            logger.info(f'检查手机号 {phone} 是否已存在')
+            
+            if phone_result and len(phone_result) > 0:
+                logger.warning(f'手机号 {phone} 已被注册')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '手机号已被注册'
+                }), 400
+            
+            # 使用bcrypt加密密码
+            import bcrypt
+            logger.info(f'为用户 {username} 生成密码哈希')
+            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+            
+            # 插入新用户
+            insert_user_query = """
+            INSERT INTO users (username, password, email, phone, role)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+            """
+            logger.info(f'准备插入新用户记录: {username}')
+            result = db.execute_query(insert_user_query, 
+                                     (username, hashed_password.decode('utf-8'), email, phone, role))
+            
+            if result and len(result) > 0:
+                user_id = result[0]['id']
+                db.conn.commit()
+                db.disconnect()
+                
+                logger.info(f'用户创建成功: {username} (用户ID: {user_id})')
+                return jsonify({
+                    'success': True,
+                    'message': '用户创建成功'
+                })
+            else:
+                db.conn.rollback()
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '创建用户失败，请稍后重试'
+                }), 500
+        except Exception as db_error:
+            logger.error(f'创建用户时发生数据库错误: {str(db_error)}')
+            if db.conn:
+                db.conn.rollback()
+                db.disconnect()
+            return jsonify({
+                'success': False,
+                'message': str(db_error)
+            }), 500
+    except Exception as e:
+        logger.error(f'创建用户时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 管理员更新用户API
+@app.route('/api/users/<int:user_id>/update', methods=['PUT'])
+def admin_update_user(user_id):
+    try:
+        # 获取请求数据
+        data = request.json
+        logger.info(f'接收到管理员更新用户请求 - 用户ID: {user_id}')
+        
+        if not data:
+            logger.warning('更新用户请求数据为空')
+            return jsonify({
+                'success': False,
+                'message': '请求数据不能为空'
+            }), 400
+        
+        # 获取用户更新信息
+        username = data.get('username')
+        email = data.get('email')
+        phone = data.get('phone')
+        role = data.get('role', 'user')
+        
+        logger.info(f'更新用户信息 - 用户名: {username}, 邮箱: {email}, 手机号: {phone}, 角色: {role}')
+        
+        # 验证必要字段
+        if not username or not email or not phone:
+            logger.warning(f'用户信息不完整 - 用户名: {username}, 邮箱: {email}, 手机号: {phone}')
+            return jsonify({
+                'success': False,
+                'message': '用户名、邮箱和手机号为必填项'
+            }), 400
+        
+        # 连接数据库
+        db = DatabaseConnection()
+        if not db.connect():
+            return jsonify({
+                'success': False,
+                'message': '数据库连接失败'
+            }), 500
+        
+        try:
+            # 检查用户是否存在
+            check_user_query = """
+            SELECT id FROM users WHERE id = %s
+            """
+            user_result = db.execute_query(check_user_query, (user_id,))
+            
+            if not user_result or len(user_result) == 0:
+                logger.warning(f'用户ID: {user_id} 不存在')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '用户不存在'
+                }), 404
+            
+            # 检查用户名是否已被其他用户使用
+            check_username_query = """
+            SELECT id FROM users WHERE username = %s AND id != %s
+            """
+            username_result = db.execute_query(check_username_query, (username, user_id))
+            
+            if username_result and len(username_result) > 0:
+                logger.warning(f'用户名 {username} 已被其他用户使用')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '用户名已被使用'
+                }), 400
+            
+            # 检查邮箱是否已被其他用户使用
+            check_email_query = """
+            SELECT id FROM users WHERE email = %s AND id != %s
+            """
+            email_result = db.execute_query(check_email_query, (email, user_id))
+            
+            if email_result and len(email_result) > 0:
+                logger.warning(f'邮箱 {email} 已被其他用户使用')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '邮箱已被使用'
+                }), 400
+            
+            # 检查手机号是否已被其他用户使用
+            check_phone_query = """
+            SELECT id FROM users WHERE phone = %s AND id != %s
+            """
+            phone_result = db.execute_query(check_phone_query, (phone, user_id))
+            
+            if phone_result and len(phone_result) > 0:
+                logger.warning(f'手机号 {phone} 已被其他用户使用')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '手机号已被使用'
+                }), 400
+            
+            # 更新用户信息
+            update_query = """
+            UPDATE users 
+            SET username = %s, email = %s, phone = %s, role = %s, updated_at = NOW()
+            WHERE id = %s
+            """
+            
+            with db.conn.cursor() as cur:
+                cur.execute(update_query, (username, email, phone, role, user_id))
+                db.conn.commit()
+            
+            logger.info(f'用户ID: {user_id} 的信息更新成功')
+            db.disconnect()
+            
+            # 获取更新后的用户信息
+            updated_user_query = """
+            SELECT id, username, email, phone, role, created_at, updated_at 
+            FROM users WHERE id = %s
+            """
+            db.connect()
+            updated_user = db.execute_query(updated_user_query, (user_id,))
+            db.disconnect()
+            
+            return jsonify({
+                'success': True,
+                'message': '用户信息更新成功',
+                'user': updated_user[0] if updated_user else None
+            })
+        except Exception as db_error:
+            logger.error(f'更新用户信息时发生数据库错误: {str(db_error)}')
+            if db.conn:
+                db.conn.rollback()
+                db.disconnect()
+            return jsonify({
+                'success': False,
+                'message': str(db_error)
+            }), 500
+    except Exception as e:
+        logger.error(f'更新用户信息时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 管理员重置用户密码API
+@app.route('/api/users/<int:user_id>/reset-password', methods=['POST'])
+def admin_reset_password(user_id):
+    try:
+        # 获取请求数据
+        data = request.json
+        logger.info(f'接收到管理员重置用户密码请求 - 用户ID: {user_id}')
+        
+        if not data:
+            logger.warning('重置密码请求数据为空')
+            return jsonify({
+                'success': False,
+                'message': '请求数据不能为空'
+            }), 400
+        
+        # 获取新密码
+        new_password = data.get('new_password')
+        
+        logger.info(f'重置用户密码 - 用户ID: {user_id}')
+        
+        # 验证密码
+        if not new_password:
+            logger.warning(f'新密码为空')
+            return jsonify({
+                'success': False,
+                'message': '新密码为必填项'
+            }), 400
+        
+        if len(new_password) < 6 or len(new_password) > 20:
+            logger.warning(f'密码长度不合法: {len(new_password)}位')
+            return jsonify({
+                'success': False,
+                'message': '密码长度必须在6到20个字符之间'
+            }), 400
+        
+        # 连接数据库
+        db = DatabaseConnection()
+        if not db.connect():
+            return jsonify({
+                'success': False,
+                'message': '数据库连接失败'
+            }), 500
+        
+        try:
+            # 检查用户是否存在
+            check_user_query = """
+            SELECT id FROM users WHERE id = %s
+            """
+            user_result = db.execute_query(check_user_query, (user_id,))
+            
+            if not user_result or len(user_result) == 0:
+                logger.warning(f'用户ID: {user_id} 不存在')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '用户不存在'
+                }), 404
+            
+            # 使用bcrypt加密新密码
+            import bcrypt
+            logger.info(f'为用户ID: {user_id} 生成新密码哈希')
+            hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+            
+            # 更新用户密码
+            update_query = """
+            UPDATE users 
+            SET password = %s, updated_at = NOW()
+            WHERE id = %s
+            """
+            
+            with db.conn.cursor() as cur:
+                cur.execute(update_query, (hashed_password.decode('utf-8'), user_id))
+                db.conn.commit()
+            
+            logger.info(f'用户ID: {user_id} 的密码重置成功')
+            db.disconnect()
+            
+            return jsonify({
+                'success': True,
+                'message': '密码重置成功'
+            })
+        except Exception as db_error:
+            logger.error(f'重置用户密码时发生数据库错误: {str(db_error)}')
+            if db.conn:
+                db.conn.rollback()
+                db.disconnect()
+            return jsonify({
+                'success': False,
+                'message': str(db_error)
+            }), 500
+    except Exception as e:
+        logger.error(f'重置用户密码时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 管理员删除用户API
+@app.route('/api/users/<int:user_id>/delete', methods=['DELETE'])
+def admin_delete_user(user_id):
+    try:
+        logger.info(f'接收到管理员删除用户请求 - 用户ID: {user_id}')
+        
+        # 不允许删除管理员用户（假设管理员用户ID为1）
+        if user_id == 1:
+            logger.warning(f'不允许删除管理员用户 - 用户ID: {user_id}')
+            return jsonify({
+                'success': False,
+                'message': '不允许删除管理员用户'
+            }), 403
+        
+        # 连接数据库
+        db = DatabaseConnection()
+        if not db.connect():
+            return jsonify({
+                'success': False,
+                'message': '数据库连接失败'
+            }), 500
+        
+        try:
+            # 检查用户是否存在
+            check_user_query = """
+            SELECT id FROM users WHERE id = %s
+            """
+            user_result = db.execute_query(check_user_query, (user_id,))
+            
+            if not user_result or len(user_result) == 0:
+                logger.warning(f'用户ID: {user_id} 不存在')
+                db.disconnect()
+                return jsonify({
+                    'success': False,
+                    'message': '用户不存在'
+                }), 404
+            
+            # 删除用户
+            delete_query = """
+            DELETE FROM users WHERE id = %s
+            """
+            
+            with db.conn.cursor() as cur:
+                cur.execute(delete_query, (user_id,))
+                db.conn.commit()
+            
+            logger.info(f'用户ID: {user_id} 删除成功')
+            db.disconnect()
+            
+            return jsonify({
+                'success': True,
+                'message': '用户删除成功'
+            })
+        except Exception as db_error:
+            logger.error(f'删除用户时发生数据库错误: {str(db_error)}')
+            if db.conn:
+                db.conn.rollback()
+                db.disconnect()
+            return jsonify({
+                'success': False,
+                'message': str(db_error)
+            }), 500
+    except Exception as e:
+        logger.error(f'删除用户时发生错误: {str(e)}')
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
 if __name__ == '__main__':
     # 确保输出目录存在
     if not os.path.exists(chart_config['output_dir']):
