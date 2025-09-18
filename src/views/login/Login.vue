@@ -66,31 +66,32 @@ export default {
       this.$refs.loginForm.validate(valid => {
         if (valid) {
           this.loading = true;
-          // 模拟登录请求
-          setTimeout(() => {
-            // 实际项目中应该调用API进行登录验证
-            // 这里模拟登录成功
-            const userInfo = {
-              id: '1',
-              username: this.loginForm.username,
-              role: 'admin',
-              token: 'mock-token-' + Date.now()
-            };
-            
-            // 保存登录信息
-            localStorage.setItem('token', userInfo.token);
-            localStorage.setItem('userInfo', JSON.stringify(userInfo));
-            
-            this.$message({
-              message: '登录成功',
-              type: 'success'
+          // 调用登录API
+          this.$axios.post('/api/user/login', this.loginForm)
+            .then(result => {
+              if (result.success) {
+                // 保存登录信息
+                const userInfo = result.userInfo;
+                localStorage.setItem('token', userInfo.token);
+                localStorage.setItem('userInfo', JSON.stringify(userInfo));
+                
+                this.$message({
+                  message: result.message || '登录成功',
+                  type: 'success'
+                });
+                
+                // 跳转到首页
+                this.$router.push('/');
+              } else {
+                this.$message.error(result.message || '登录失败，请稍后重试');
+              }
+              this.loading = false;
+            })
+            .catch(error => {
+              console.error('登录失败:', error);
+              this.$message.error('登录失败，请稍后重试');
+              this.loading = false;
             });
-            
-            // 跳转到首页
-            this.$router.push('/');
-            
-            this.loading = false;
-          }, 1500);
         } else {
           return false;
         }

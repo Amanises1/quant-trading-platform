@@ -1,9 +1,10 @@
+// 导入axios
 import axios from 'axios'
 
 // 创建axios实例
 const service = axios.create({
   baseURL: process.env.VUE_APP_API_URL || 'http://localhost:5000',
-  timeout: 30000 // 请求超时时间
+  timeout: 60000 // 请求超时时间，增加到60秒以避免图表生成超时
 })
 
 // 请求拦截器
@@ -14,7 +15,7 @@ service.interceptors.request.use(
     // if (token) {
     //   config.headers['Authorization'] = `Bearer ${token}`
     // }
-    
+
     // 添加请求时间戳，避免缓存
     if (config.method === 'get') {
       config.params = {
@@ -22,7 +23,7 @@ service.interceptors.request.use(
         _t: Date.now()
       }
     }
-    
+
     console.log('API请求配置:', config)
     return config
   },
@@ -36,7 +37,7 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   response => {
     const res = response.data
-    
+
     // 根据后端返回格式判断请求是否成功
     if (res.code !== undefined) {
       // 如果有code字段，使用code判断
@@ -62,15 +63,15 @@ service.interceptors.response.use(
   },
   error => {
     console.error('响应错误:', error)
-    
+
     // 处理网络错误、超时等
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       handleError(408, '请求超时，请稍后重试')
     } else if (error.response) {
-        // 服务器返回错误状态码
-        const status = error.response.status
-        const message = error.response.data && error.response.data.message ? error.response.data.message : '服务器错误'
-        handleError(status, message)
+      // 服务器返回错误状态码
+      const status = error.response.status
+      const message = error.response.data && error.response.data.message ? error.response.data.message : '服务器错误'
+      handleError(status, message)
     } else if (error.request) {
       // 请求已发送但没有收到响应
       handleError(503, '网络连接失败，请检查网络设置')
@@ -78,7 +79,7 @@ service.interceptors.response.use(
       // 请求配置出错
       handleError(400, error.message || '请求配置错误')
     }
-    
+
     return Promise.reject(error)
   }
 )
@@ -86,7 +87,7 @@ service.interceptors.response.use(
 // 错误处理函数
 function handleError(code, message) {
   console.error(`API错误 ${code}:`, message)
-  
+
   // 根据错误码进行不同处理
   switch (code) {
     case 401:
@@ -125,24 +126,24 @@ export default {
   get(url, params = {}) {
     return service.get(url, { params })
   },
-  
+
   post(url, data = {}, params = {}) {
     return service.post(url, data, { params })
   },
-  
+
   put(url, data = {}, params = {}) {
     return service.put(url, data, { params })
   },
-  
+
   delete(url, params = {}) {
     return service.delete(url, { params })
   },
-  
+
   // 上传文件
   upload(url, file, onUploadProgress) {
     const formData = new FormData()
     formData.append('file', file)
-    
+
     return service.post(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
@@ -150,7 +151,7 @@ export default {
       onUploadProgress
     })
   },
-  
+
   // 下载文件
   download(url, params = {}) {
     return service.get(url, {
@@ -158,7 +159,7 @@ export default {
       responseType: 'blob'
     })
   },
-  
+
   // 获取axios实例，用于自定义配置
   getInstance() {
     return service

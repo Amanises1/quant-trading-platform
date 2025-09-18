@@ -12,7 +12,7 @@
 </template>
 
 <script>
-import axios from 'axios';
+import axios from '@/utils/axios-config';
 
 export default {
   name: 'NotificationCenter',
@@ -57,11 +57,11 @@ export default {
   async loadNotifications() {
     try {
       const response = await axios.get('/api/notifications');
-      if (response.data.success && response.data.notifications) {
-        this.notifications = response.data.notifications;
-      } else if (!response.data.success && !response.data.notifications) {
-        // 如果API返回成功但没有数据，使用模拟数据
-        console.warn('API返回无数据，使用模拟数据');
+      if (response.notifications) {
+        this.notifications = response.notifications;
+      } else if (response.success === false || !response.notifications) {
+        // 如果API返回失败或没有数据，使用模拟数据
+        console.warn('API返回无数据或失败，使用模拟数据');
         this.generateMockNotifications();
       }
     } catch (error) {
@@ -123,9 +123,9 @@ export default {
     try {
       const response = await axios.get('/api/notifications/latest');
       
-      if (response.data.success && response.data.new_notifications && response.data.new_notifications.length > 0) {
+      if (response.success && response.new_notifications && response.new_notifications.length > 0) {
         // 添加新通知到列表
-        response.data.new_notifications.forEach(notification => {
+        response.new_notifications.forEach(notification => {
           // 检查是否已存在相同ID的通知
           if (!this.notifications.find(n => n.id === notification.id)) {
             this.notifications.unshift(notification);
@@ -214,8 +214,11 @@ export default {
 
     // 查看全部通知
     viewAllNotifications() {
-      // 跳转到完整的通知中心页面
-      this.$router.push('/notifications');
+      // 避免重复导航到当前页面
+      if (this.$route.path !== '/notifications') {
+        // 跳转到完整的通知中心页面
+        this.$router.push('/notifications');
+      }
     },
 
     // 获取通知标签类型
@@ -392,6 +395,7 @@ export default {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
 }
 

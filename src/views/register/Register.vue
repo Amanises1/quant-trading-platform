@@ -23,9 +23,7 @@
         </el-form-item>
         <el-form-item label="用户角色" prop="role">
           <el-select v-model="registerForm.role" placeholder="请选择用户角色">
-            <el-option label="交易员" value="trader"></el-option>
-            <el-option label="研究员" value="researcher"></el-option>
-            <el-option label="系统管理员" value="admin"></el-option>
+            <el-option label="普通用户" value="trader"></el-option>
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -115,16 +113,26 @@ export default {
       this.$refs.registerForm.validate(valid => {
         if (valid) {
           this.loading = true;
-          // 模拟注册请求
-          setTimeout(() => {
-            // 实际项目中应该调用API进行注册
-            this.$message({
-              message: '注册成功，请登录',
-              type: 'success'
+          // 调用注册API
+          this.$axios.post('/api/user/register', this.registerForm)
+            .then(response => {
+              if (response.data.success) {
+                this.$message({
+                  message: response.data.message || '注册成功，请登录',
+                  type: 'success'
+                });
+                this.loading = false;
+                this.$router.push('/login');
+              } else {
+                this.$message.error(response.data.message || '注册失败，请稍后重试');
+                this.loading = false;
+              }
+            })
+            .catch(error => {
+              console.error('注册失败:', error);
+              this.$message.error('注册失败，请稍后重试');
+              this.loading = false;
             });
-            this.loading = false;
-            this.$router.push('/login');
-          }, 1500);
         } else {
           return false;
         }

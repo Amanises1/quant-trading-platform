@@ -34,56 +34,56 @@ const routes = [
         path: 'visualization',
         name: 'Visualization',
         component: () => import('../views/visualization/Visualization.vue'),
-        meta: { title: '多维特征可视化', requiresAuth: true, roles: ['trader', 'researcher'] }
+        meta: { title: '多维特征可视化', requiresAuth: true, roles: ['user'] }
       },
       {
         path: 'risk-warning',
         name: 'RiskWarning',
         component: () => import('../views/risk-warning/RiskWarning.vue'),
-        meta: { title: '风险预警与熔断', requiresAuth: true, roles: ['trader', 'researcher'] }
+        meta: { title: '风险预警与熔断', requiresAuth: true, roles: ['user'] }
       },
       {
         path: 'trade-monitor',
         name: 'TradeMonitor',
         component: () => import('../views/trade-monitor/TradeMonitor.vue'),
-        meta: { title: '实时交易监控', requiresAuth: true, roles: ['trader'] }
+        meta: { title: '实时交易监控', requiresAuth: true, roles: ['user'] }
       },
       {
         path: 'strategy-backtest',
         name: 'StrategyBacktest',
         component: () => import('../views/strategy-backtest/StrategyBacktest.vue'),
-        meta: { title: '交易策略回测', requiresAuth: true, roles: ['trader', 'researcher'] }
+        meta: { title: '交易策略回测', requiresAuth: true, roles: ['user'] }
       },
       {
         path: 'signal-generation',
         name: 'SignalGeneration',
         component: () => import('../views/signal-generation/SignalGeneration.vue'),
-        meta: { title: '智能交易信号生成', requiresAuth: true, roles: ['trader', 'researcher'] }
+        meta: { title: '智能交易信号生成', requiresAuth: true, roles: ['user'] }
       },
       // 研究员路由
       {
         path: 'data-collection',
         name: 'DataCollection',
         component: () => import('../views/data-collection/DataCollection.vue'),
-        meta: { title: '数据采集和清洗', requiresAuth: true, roles: ['researcher'] }
+        meta: { title: '数据采集和清洗', requiresAuth: true, roles: ['user'] }
       },
       {
         path: 'model-management',
         name: 'ModelManagement',
         component: () => import('../views/model-management/ModelManagement.vue'),
-        meta: { title: '模型全生命周期管理', requiresAuth: true, roles: ['researcher', 'admin'] }
+        meta: { title: '模型全生命周期管理', requiresAuth: true, roles: ['user', 'admin'] }
       },
       {
         path: 'historical-data',
         name: 'HistoricalData',
         component: () => import('../views/historical-data/HistoricalData.vue'),
-        meta: { title: '加载历史数据', requiresAuth: true, roles: ['researcher'] }
+        meta: { title: '加载历史数据', requiresAuth: true, roles: ['user'] }
       },
       {
         path: 'technical-indicators',
         name: 'TechnicalIndicators',
         component: () => import('../views/technical-indicators/TechnicalIndicators.vue'),
-        meta: { title: '计算技术指标', requiresAuth: true, roles: ['researcher'] }
+        meta: { title: '计算技术指标', requiresAuth: true, roles: ['user'] }
       },
       // 系统管理员路由
       {
@@ -92,18 +92,19 @@ const routes = [
         component: () => import('../views/system-params/SystemParams.vue'),
         meta: { title: '系统参数管理', requiresAuth: true, roles: ['admin'] }
       },
-      {        path: 'database-maintenance',        name: 'DatabaseMaintenance',        component: () => import('../views/database-maintenance/DatabaseMaintenance.vue'),        meta: { title: '数据库维护', requiresAuth: true, roles: ['admin'] }      },      {        path: 'notifications',        name: 'Notifications',        component: () => import('../views/notification/NotificationCenterPage.vue'),        meta: { title: '通知中心', requiresAuth: true }      },
+      { path: 'database-maintenance', name: 'DatabaseMaintenance', component: () => import('../views/database-maintenance/DatabaseMaintenance.vue'), meta: { title: '数据库维护', requiresAuth: true, roles: ['admin'] } }, { path: 'notifications', name: 'Notifications', component: () => import('../views/notification/NotificationCenterPage.vue'), meta: { title: '通知中心', requiresAuth: true } },
       {
         path: 'platform-migration',
         name: 'PlatformMigration',
         component: () => import('../views/platform-migration/PlatformMigration.vue'),
         meta: { title: '跨平台迁移', requiresAuth: true, roles: ['admin'] }
       },
+      { path: 'user-management', name: 'UserManagement', component: () => import('../views/user-management/UserManagement.vue'), meta: { title: '用户管理', requiresAuth: true, roles: ['admin'] } },
       {
-        path: 'user-management',
-        name: 'UserManagement',
-        component: () => import('../views/user-management/UserManagement.vue'),
-        meta: { title: '用户管理', requiresAuth: true, roles: ['admin'] }
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('../views/profile/Profile.vue'),
+        meta: { title: '个人信息', requiresAuth: true }
       }
     ]
   },
@@ -125,10 +126,7 @@ const router = new VueRouter({
 router.beforeEach((to, from, next) => {
   // 设置页面标题
   document.title = to.meta.title || '量化交易选股系统'
-  
-  // 为了方便预览，临时禁用登录权限验证
-  // 实际使用时请取消注释下面的代码
-  /*
+
   // 判断该路由是否需要登录权限
   if (to.meta.requiresAuth) {
     const token = localStorage.getItem('token')
@@ -154,10 +152,6 @@ router.beforeEach((to, from, next) => {
   } else {
     next()
   }
-  */
-  
-  // 直接通过所有路由，方便预览
-  next()
 })
 
 export default router

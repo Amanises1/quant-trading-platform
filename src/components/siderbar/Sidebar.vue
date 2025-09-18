@@ -12,8 +12,8 @@
         </div>
       </div>
       
-      <!-- 交易员菜单 -->
-      <template v-if="userRole === 'trader'">
+      <!-- 用户菜单 -->
+      <template v-if="userRole === 'user'">
         <el-menu-item index="/dashboard">
           <i class="el-icon-s-home"/>
           <span slot="title">首页</span>
@@ -21,10 +21,6 @@
         <el-menu-item index="/visualization">
           <i class="el-icon-data-line"/>
           <span slot="title">多维特征可视化</span>
-        </el-menu-item>
-        <el-menu-item index="/risk-warning">
-          <i class="el-icon-warning"/>
-          <span slot="title">风险预警与熔断</span>
         </el-menu-item>
         <el-menu-item index="/trade-monitor">
           <i class="el-icon-monitor"/>
@@ -40,63 +36,13 @@
         </el-menu-item>
       </template>
       
-      <!-- 研究员菜单 -->
-      <template v-if="userRole === 'researcher'">
-        <el-menu-item index="/dashboard">
-          <i class="el-icon-s-home"/>
-          <span slot="title">首页</span>
-        </el-menu-item>
-        <el-menu-item index="/visualization">
-          <i class="el-icon-data-line"/>
-          <span slot="title">多维特征可视化</span>
-        </el-menu-item>
-        <el-menu-item index="/data-collection">
-          <i class="el-icon-collection"/>
-          <span slot="title">数据采集和清洗</span>
-        </el-menu-item>
-        <el-menu-item index="/model-management">
-          <i class="el-icon-s-cooperation"/>
-          <span slot="title">模型全生命周期管理</span>
-        </el-menu-item>
-        <el-menu-item index="/historical-data">
-          <i class="el-icon-document"/>
-          <span slot="title">加载历史数据</span>
-        </el-menu-item>
-        <el-menu-item index="/technical-indicators">
-          <i class="el-icon-s-marketing"/>
-          <span slot="title">计算技术指标</span>
-        </el-menu-item>
-        <el-menu-item index="/signal-generation">
-          <i class="el-icon-bell"/>
-          <span slot="title">智能交易信号生成</span>
-        </el-menu-item>
-        <el-menu-item index="/strategy-backtest">
-          <i class="el-icon-time"/>
-          <span slot="title">交易策略回测</span>
-        </el-menu-item>
-      </template>
+     
       
       <!-- 系统管理员菜单 -->
       <template v-if="userRole === 'admin'">
         <el-menu-item index="/dashboard">
           <i class="el-icon-s-home"/>
           <span slot="title">首页</span>
-        </el-menu-item>
-        <el-menu-item index="/system-params">
-          <i class="el-icon-setting"/>
-          <span slot="title">系统参数管理</span>
-        </el-menu-item>
-        <el-menu-item index="/database-maintenance">
-          <i class="el-icon-coin"/>
-          <span slot="title">数据库维护</span>
-        </el-menu-item>
-        <el-menu-item index="/model-management">
-          <i class="el-icon-s-cooperation"/>
-          <span slot="title">模型全生命周期</span>
-        </el-menu-item>
-        <el-menu-item index="/platform-migration">
-          <i class="el-icon-share"/>
-          <span slot="title">跨平台迁移</span>
         </el-menu-item>
         <el-menu-item index="/user-management">
           <i class="el-icon-user"/>
@@ -113,7 +59,7 @@ export default {
   data() {
     return {
       isCollapse: false,
-      userRole: 'trader' // 默认为交易员角色，实际应从登录信息中获取
+      userRole: 'user' // 默认为普通用户角色，实际应从登录信息中获取
     }
   },
   computed: {
@@ -133,7 +79,7 @@ export default {
     if (userInfo) {
       try {
         const parsedInfo = JSON.parse(userInfo);
-        this.userRole = parsedInfo.role || 'admin';
+        this.userRole = parsedInfo.role || 'user';
       } catch (e) {
         console.error('解析用户信息失败', e);
       }

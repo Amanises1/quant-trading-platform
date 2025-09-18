@@ -19,7 +19,6 @@
         </span>
         <el-dropdown-menu slot="dropdown">
           <el-dropdown-item command="profile">个人信息</el-dropdown-item>
-          <el-dropdown-item command="settings">系统设置</el-dropdown-item>
           <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
@@ -37,13 +36,27 @@ export default {
   },
   data() {
     return {
-      username: '管理员',
+      username: this.getUserInfo().role === 'admin' ? '管理员' : (this.getUserInfo().username ),
       logo: false // 暂时没有logo图片
     }
   },
   methods: {
+    getUserInfo() {
+      const userInfo = localStorage.getItem('userInfo');
+      if (userInfo) {
+        try {
+          return JSON.parse(userInfo);
+        } catch (e) {
+          return {};
+        }
+      }
+      return {};
+    },
     viewAllNotifications() {
-      this.$router.push('/notifications');
+      // 避免重复导航到当前页面
+      if (this.$route.path !== '/notifications') {
+        this.$router.push('/notifications');
+      }
     },
     handleCommand(command) {
       if (command === 'logout') {

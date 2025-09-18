@@ -1,35 +1,10 @@
-# 风控管理模块
-import random
 import datetime
 from typing import List, Dict, Any, Optional
+import datetime
+import logging
+from .database_connection import db_conn
 from .position_manager import position_manager
 from .execution_engine import execution_engine
-
-# 模拟账户数据
-simulated_accounts = [
-    {
-        'id': 'A001',
-        'name': '股票账户',
-        'balance': 500000.00,
-        'equity': 700000.00,
-        'margin': 100000.00,
-        'marginRatio': 170.00,
-        'maxDrawdown': -8.50,
-        'dailyProfit': 2500.00,
-        'riskLevel': 'medium'
-    },
-    {
-        'id': 'A002',
-        'name': '期货账户',
-        'balance': 300000.00,
-        'equity': 350000.00,
-        'margin': 150000.00,
-        'marginRatio': 140.00,
-        'maxDrawdown': -12.30,
-        'dailyProfit': -1200.00,
-        'riskLevel': 'high'
-    }
-]
 
 # 风控阈值配置
 default_risk_thresholds = {
@@ -46,20 +21,21 @@ class RiskManager:
     """风控管理类，负责监控风险并执行风控措施"""
     
     def __init__(self):
-        self.accounts = simulated_accounts.copy()
         self.thresholds = default_risk_thresholds.copy()
         self.monitoring_enabled = True
+        self.logger = logging.getLogger(__name__)
     
     def get_accounts(self) -> List[Dict[str, Any]]:
-        """获取所有账户信息
+        """从数据库获取所有账户信息
         
         Returns:
             账户列表
         """
-        return self.accounts
+        query = "SELECT * FROM accounts"
+        return db_conn.execute_query(query)
     
     def get_account_by_id(self, account_id: str) -> Dict[str, Any]:
-        """根据ID获取账户信息
+        """根据ID从数据库获取账户信息
         
         Args:
             account_id: 账户ID
@@ -67,13 +43,12 @@ class RiskManager:
         Returns:
             账户信息
         """
-        for account in self.accounts:
-            if account['id'] == account_id:
-                return account
-        return None
+        query = "SELECT * FROM accounts WHERE id = %s"
+        result = db_conn.execute_query(query, (account_id,))
+        return result[0] if result else None
     
     def update_account(self, account_id: str, updates: Dict[str, Any]) -> bool:
-        """更新账户信息
+        """更新数据库中的账户信息
         
         Args:
             account_id: 账户ID
@@ -82,11 +57,23 @@ class RiskManager:
         Returns:
             更新是否成功
         """
-        for account in self.accounts:
-            if account['id'] == account_id:
-                account.update(updates)
-                return True
-        return False
+        try:
+            # 构建UPDATE语句
+            set_clauses = []
+            params = []
+            
+            for key, value in updates.items():
+                set_clauses.append(f"{key} = %s")
+                params.append(value)
+            
+            params.append(account_id)  # 最后添加WHERE条件的参数
+            
+            query = f"UPDATE accounts SET {', '.join(set_clauses)}, updated_at = NOW() WHERE id = %s"
+            db_conn.execute_query(query, tuple(params))
+            return True
+        except Exception as e:
+            self.logger.error(f"更新账户信息失败: {e}")
+            return False
     
     def get_risk_thresholds(self) -> Dict[str, Any]:
         """获取风控阈值配置
@@ -138,6 +125,9 @@ class RiskManager:
             'timestamp': datetime.datetime.now().timestamp()
         }
         
+        # 将风险报告保存到数据库
+        self._save_risk_report_to_db(risk_report)
+        
         return risk_report
     
     def _calculate_risk_metrics(self, account: Dict[str, Any], positions: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -151,7 +141,7 @@ class RiskManager:
             风险指标
         """
         # 计算总市值
-        total_market_value = sum(pos['marketValue'] for pos in positions)
+        total_market_value = sum(pos['market_value'] for pos in positions)
         
         # 计算持仓比例
         position_ratio = (total_market_value / account['equity']) * 100 if account['equity'] > 0 else 0
@@ -159,24 +149,44 @@ class RiskManager:
         # 计算最大单一持仓占比
         max_single_position_ratio = 0
         if positions and account['equity'] > 0:
-            max_single_position = max(positions, key=lambda x: x['marketValue'])
-            max_single_position_ratio = (max_single_position['marketValue'] / account['equity']) * 100
+            max_single_position = max(positions, key=lambda x: x['market_value'])
+            max_single_position_ratio = (max_single_position['market_value'] / account['equity']) * 100
         
         # 计算总盈亏和盈亏率
-        total_profit = sum(pos['profit'] for pos in positions)
+        total_profit = sum(pos['unrealized_pnl'] for pos in positions)
         profit_rate = (total_profit / account['equity']) * 100 if account['equity'] > 0 else 0
         
-        # 模拟波动率计算
-        volatility = random.uniform(8, 20)
+        # 从数据库获取波动率数据
+        # 这里简化处理，实际应用中应该从市场数据服务获取
+        volatility = 15.0  # 默认波动率
+        try:
+            query = """
+            SELECT AVG(volatility) as avg_volatility 
+            FROM market_data 
+            WHERE symbol IN %s 
+            ORDER BY timestamp DESC 
+            LIMIT 30
+            """
+            
+            symbols = tuple(pos['symbol'] for pos in positions) if positions else ('',)
+            result = db_conn.execute_query(query, (symbols,))
+            
+            if result and result[0]['avg_volatility'] is not None:
+                volatility = result[0]['avg_volatility']
+        except Exception as e:
+            self.logger.error(f"获取波动率数据失败: {e}")
+        
+        # 获取账户最大回撤
+        max_drawdown = account.get('max_drawdown', 0.0)
         
         risk_metrics = {
-            'marginRatio': account['marginRatio'],
+            'marginRatio': account['margin_used'] / account['equity'] * 100 if account['equity'] > 0 else 0,
             'positionRatio': position_ratio,
             'maxSinglePositionRatio': max_single_position_ratio,
             'volatility': volatility,
             'totalProfit': total_profit,
             'profitRate': profit_rate,
-            'maxDrawdown': account['maxDrawdown']
+            'maxDrawdown': max_drawdown
         }
         
         return risk_metrics
@@ -230,23 +240,38 @@ class RiskManager:
                 'suggestion': '注意市场波动风险'
             })
         
-        # 检查当日盈亏
-        if account['dailyProfit'] < 0 and abs(account['dailyProfit'] / account['equity'] * 100) > self.thresholds['maxDrawdownDaily']:
-            alerts.append({
-                'type': 'daily_loss',
-                'level': 'danger',
-                'message': f'账户{account["name"]}今日亏损({account["dailyProfit"]:.2f}元)超过单日最大回撤限制({self.thresholds["maxDrawdownDaily"]}%)',
-                'suggestion': '评估持仓风险，考虑止损措施'
-            })
+        # 检查当日盈亏（从数据库获取）
+        try:
+            query = """
+            SELECT SUM(realized_pnl) as daily_profit 
+            FROM trade_history 
+            WHERE account_id = %s AND date_trunc('day', created_at) = date_trunc('day', NOW())
+            """
+            result = db_conn.execute_query(query, (account['id'],))
+            daily_profit = result[0]['daily_profit'] if result and result[0]['daily_profit'] is not None else 0
+            
+            if daily_profit < 0 and abs(daily_profit / account['equity'] * 100) > self.thresholds['maxDrawdownDaily']:
+                alerts.append({
+                    'type': 'daily_loss',
+                    'level': 'danger',
+                    'message': f'账户{account["name"]}今日亏损({daily_profit:.2f}元)超过单日最大回撤限制({self.thresholds["maxDrawdownDaily"]}%)',
+                    'suggestion': '评估持仓风险，考虑止损措施'
+                })
+        except Exception as e:
+            self.logger.error(f"获取当日盈亏数据失败: {e}")
         
         # 检查总体回撤
-        if account['maxDrawdown'] < -self.thresholds['maxDrawdownOverall']:
+        if 'max_drawdown' in account and account['max_drawdown'] < -self.thresholds['maxDrawdownOverall']:
             alerts.append({
                 'type': 'overall_drawdown',
                 'level': 'danger',
-                'message': f'账户{account["name"]}总体回撤({account["maxDrawdown"]:.2f}%)超过限制({self.thresholds["maxDrawdownOverall"]}%)',
+                'message': f'账户{account["name"]}总体回撤({account["max_drawdown"]:.2f}%)超过限制({self.thresholds["maxDrawdownOverall"]}%)',
                 'suggestion': '评估策略风险，考虑调整资产配置'
             })
+        
+        # 将风险预警保存到数据库
+        for alert in alerts:
+            self._save_alert_to_db(account['id'], alert)
         
         return alerts
     
@@ -269,7 +294,8 @@ class RiskManager:
         measures = []
         
         # 检查是否需要强制平仓
-        if account['marginRatio'] < self.thresholds['marginLiquidation']:
+        margin_ratio = account['margin_used'] / account['equity'] * 100 if account['equity'] > 0 else 0
+        if margin_ratio < self.thresholds['marginLiquidation']:
             # 执行强制平仓
             closed_positions = self._force_liquidation(account_id)
             measures.append({
@@ -280,13 +306,17 @@ class RiskManager:
             })
         
         # 检查是否需要暂停交易
-        if account['maxDrawdown'] < -self.thresholds['maxDrawdownOverall'] * 1.2:
+        if 'max_drawdown' in account and account['max_drawdown'] < -self.thresholds['maxDrawdownOverall'] * 1.2:
             # 在实际应用中，这里应该有暂停交易的逻辑
             measures.append({
                 'type': 'suspend_trading',
                 'message': f'账户{account["name"]}回撤过大，已暂停交易权限',
                 'timestamp': datetime.datetime.now().timestamp()
             })
+        
+        # 将风控措施记录到数据库
+        for measure in measures:
+            self._save_risk_measure_to_db(account_id, measure)
         
         return measures
     
@@ -303,43 +333,50 @@ class RiskManager:
         closed_positions = []
         
         # 按亏损程度排序，优先平仓亏损最多的持仓
-        positions.sort(key=lambda x: x['profit'], reverse=True)
+        positions.sort(key=lambda x: x['unrealized_pnl'], reverse=True)
         
         # 模拟平仓操作
         for position in positions:
             # 创建卖出订单
             order_data = {
                 'symbol': position['symbol'],
-                'name': position['name'],
-                'type': 'sell',
-                'orderType': 'market',
+                'name': position.get('name', position['symbol']),
+                'side': 'sell',
+                'order_type': 'market',
                 'quantity': position['quantity'],
-                'price': position['currentPrice'],
-                'accountId': account_id,
-                'assetType': position['assetType']
+                'price': position['market_price'],
+                'account_id': account_id,
+                'asset_type': position.get('asset_type', 'stock')
             }
             
             # 提交订单
-            order = execution_engine.submit_order(order_data)
-            
-            # 如果订单成功执行，记录平仓信息
-            if order['status'] == 'filled':
-                closed_positions.append({
-                    'positionId': position['id'],
-                    'symbol': position['symbol'],
-                    'quantity': position['quantity'],
-                    'price': position['currentPrice'],
-                    'orderId': order['id']
-                })
+            try:
+                order = execution_engine.submit_order(order_data)
+                
+                # 如果订单成功执行，记录平仓信息
+                if order and order.get('status') == 'filled':
+                    closed_positions.append({
+                        'position_id': position.get('position_id', ''),
+                        'symbol': position['symbol'],
+                        'quantity': position['quantity'],
+                        'price': position['market_price'],
+                        'order_id': order.get('order_id', '')
+                    })
+            except Exception as e:
+                self.logger.error(f"提交平仓订单失败: {e}")
         
         # 创建强制平仓通知
-        alert_system.add_alert({
-            'type': 'risk',
-            'level': 'danger',
-            'title': '强制平仓通知',
-            'message': f'账户{account_id}因保证金不足已执行强制平仓，共平仓{len(closed_positions)}个持仓',
-            'accountId': account_id
-        })
+        try:
+            from .alert_system import alert_system
+            alert_system.add_alert({
+                'type': 'risk',
+                'level': 'danger',
+                'title': '强制平仓通知',
+                'message': f'账户{account_id}因保证金不足已执行强制平仓，共平仓{len(closed_positions)}个持仓',
+                'account_id': account_id
+            })
+        except Exception as e:
+            self.logger.error(f"创建强制平仓通知失败: {e}")
         
         return closed_positions
     
@@ -354,6 +391,66 @@ class RiskManager:
         """
         self.monitoring_enabled = enable
         return self.monitoring_enabled
+    
+    def _save_risk_report_to_db(self, risk_report: Dict[str, Any]) -> None:
+        """将风险报告保存到数据库"""
+        try:
+            query = """
+            INSERT INTO risk_reports (account_id, risk_metrics, alerts, timestamp)
+            VALUES (%s, %s, %s, %s)
+            """
+            
+            params = (
+                risk_report['accountId'],
+                str(risk_report['riskMetrics']),
+                str(risk_report['alerts']),
+                risk_report['timestamp']
+            )
+            
+            db_conn.execute_query(query, params)
+        except Exception as e:
+            self.logger.error(f"保存风险报告失败: {e}")
+    
+    def _save_alert_to_db(self, account_id: str, alert: Dict[str, Any]) -> None:
+        """将风险预警保存到数据库"""
+        try:
+            query = """
+            INSERT INTO risk_alerts (account_id, type, level, message, suggestion, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            
+            params = (
+                account_id,
+                alert['type'],
+                alert['level'],
+                alert['message'],
+                alert.get('suggestion', ''),
+                datetime.datetime.now().timestamp()
+            )
+            
+            db_conn.execute_query(query, params)
+        except Exception as e:
+            self.logger.error(f"保存风险预警失败: {e}")
+    
+    def _save_risk_measure_to_db(self, account_id: str, measure: Dict[str, Any]) -> None:
+        """将风控措施记录到数据库"""
+        try:
+            query = """
+            INSERT INTO risk_measures (account_id, type, message, closed_positions, timestamp)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+            
+            params = (
+                account_id,
+                measure['type'],
+                measure['message'],
+                str(measure.get('closedPositions', [])),
+                measure['timestamp']
+            )
+            
+            db_conn.execute_query(query, params)
+        except Exception as e:
+            self.logger.error(f"保存风控措施记录失败: {e}")
 
 # 创建全局风控管理器实例
 risk_manager = RiskManager()
